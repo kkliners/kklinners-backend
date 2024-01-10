@@ -1,0 +1,42 @@
+{
+  "name": "cleaning-service-api",
+  "version": "1.0.0",
+  "description": "cleaning api",
+  "main": "app.js",
+  "scripts": {
+    "start": "nodemon app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/onyillto/Cleaning-Service-Api.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/onyillto/Cleaning-Service-Api/issues"
+  },
+  "homepage": "https://github.com/onyillto/Cleaning-Service-Api#readme",
+  "dependencies": {
+    "async-handler": "^0.0.3",
+    "bcrypt": "^5.1.0",
+    "bcrypt-nodejs": "^0.0.3",
+    "body-parser": "^1.20.2",
+    "cookie-parser": "^1.4.6",
+    "crypto-js": "^4.1.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-async-handler": "^1.2.0",
+    "express-session": "^1.17.3",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^7.5.4",
+    "morgan": "^1.10.0",
+    "nodemailer": "^6.9.7",
+    "passport": "^0.6.0",
+    "passport-facebook": "^3.0.0",
+    "passport-google-oauth20": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.4",
+    "nodemon": "^3.0.1"
+  }
+}
