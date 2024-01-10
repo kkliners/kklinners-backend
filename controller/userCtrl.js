@@ -91,6 +91,7 @@ const loginUser = asyncHandler(async (req, res) => {
 });
 
 // filldata user after login and register
+
 const filldata = asyncHandler(async (req, res) => {
   try {
       const userId = req.body;
@@ -133,16 +134,13 @@ const filldata = asyncHandler(async (req, res) => {
       }
 
       // Add the existing user data to the 'userData' array
-      const newData = {
+      user.userData.push({
         username: user.username,
         firstName: user.firstName,
         lastName: user.lastName,
         mobile: user.mobile,
         address: user.address,
-      };
-    
-      const insertIndex = 1; // Specify the desired index
-      user.userData.splice(insertIndex, 0, newData);
+    });
 
       // Save the updated user document
       await user.save();
@@ -284,7 +282,43 @@ const unBlockUser= asyncHandler(async(req,res)=>{
     }
 })
 
+const veriffyPin = asyncHandler(async(req,res)=>{
+  const { email, pin } = req.body;
 
+  // Validate request parameters
+  if (!email || !pin) {
+    return res.status(400).json({ success: false, error: 'Email and PIN are required' });
+  }
+
+  try {
+    // Find the user by email
+    const user = await User.findOne( {email} );
+    console.log(user.verificationTokenExpires)
+    
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    console.log('this worked')
+    // Check if the provided PIN matches the stored PIN
+    if (pin != user.verificationPin) {
+      return res.status(401).json({ success: false, error: 'Incorrect PIN' });
+    };
+
+    // Check if the PIN has expired
+    const currentTimestamp = Date.now();
+    if (user.passwordResetExpires && currentTimestamp > user.passwordResetExpires) {
+      return res.status(401).json({ success: false, error: 'PIN has expired' });
+    }
+
+    // PIN is correct, you can implement further actions here
+
+    // For demonstration purposes, let's send a success response
+    return res.status(200).json({ success: true, message: 'PIN verification successful' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}) 
 
 
 const changePassword = asyncHandler(async (req, res) => {
@@ -359,5 +393,8 @@ const forgotPasswordToken = asyncHandler(async (req, res) => {
 //   // Respond with a more generic message or omit the response data for security reasons
 //   res.json({ message: 'Password reset successful' });
 // });
+
+
+
 //Send a four digit token instead and veriffy email
-module.exports = {registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken}
+module.exports = {registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,veriffyPin }

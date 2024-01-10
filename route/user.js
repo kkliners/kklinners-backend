@@ -12,7 +12,7 @@ route.put('/edit-user',authMiddleware,updateUser)
 route.put('/edit-user/:id',authMiddleware,updateUser)
 route.put('/block-user/:id',isAdmin,authMiddleware,blockUser)
 route.put('/unblock-user/:id',isAdmin,authMiddleware,unBlockUser)
-route.put('/reset-password', authMiddleware, changePassword);
+route.put('/reset-password', changePassword);
 // app.use('/logout', authMiddleware, logoutUser);
 route.post('/forgot-password-token', forgotPasswordToken);
 // Define the reset password route with a token parameter
