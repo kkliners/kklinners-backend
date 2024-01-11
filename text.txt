@@ -1,0 +1,121 @@
+const mongoose = require('mongoose');
+
+const cleaningServiceSchema = new mongoose.Schema({
+  userID: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  serviceName: {
+    type: String,
+    required: true
+  },
+  serviceDescription: {
+    type: String,
+    required: true
+  },
+  areas: [String],
+  serviceRate: { // Remove in code  as it done dynamically
+    type: Number
+  }If the rates for cleaning services are dynamic and can change based on various factors (e.g., different rates for different times or locations), you might want to calculate the service rate dynamically at the time of booking and store it in the BookedService schema as price.
+});
+
+// Before saving the document, calculate and set the serviceRate
+cleaningServiceSchema.pre('save', function(next) {
+  const baseRate = 20.00;
+  const numberOfAreas = this.areas.length;
+
+  // Calculate and set the serviceRate
+  this.serviceRate = baseRate * numberOfAreas;
+
+  next(); // Continue with the save operation
+});
+
+const CleaningService = mongoose.model('CleaningService', cleaningServiceSchema);
+
+module.exports = CleaningService;
+
+
+
+
+
+
+
+Building a backend for a cleaning service app involves designing a database schema to store information about bookings, transactions, payment history, and linking them to users. Below is a simplified example of how you might structure these entities in a relational database, assuming you're using something like MongoDB or a SQL database.
+
+### Database Schema:
+
+1. **Users Table:**
+   - `userID` (Primary Key)
+   - `username`
+   - `email`
+   - `password` (hashed)
+
+2. **CleaningService Table:**
+   - `serviceID` (Primary Key)
+   - `serviceName`
+   - `serviceDescription`
+   - `serviceRate`
+
+3. **Bookings Table:**
+   - `bookingID` (Primary Key)
+   - `userID` (Foreign Key referencing Users Table)
+   - `serviceID` (Foreign Key referencing CleaningService Table)
+   - `bookingDate`
+   - `status` (e.g., Pending, Confirmed, Completed)
+
+4. **Transactions Table:**
+   - `transactionID` (Primary Key)
+   - `bookingID` (Foreign Key referencing Bookings Table)
+   - `amount`
+   - `transactionDate`
+   - `paymentMethod` (Credit Card, PayPal, etc.)
+
+### Database Relationships:
+
+- **User to Bookings:** One-to-Many (A user can have multiple bookings, but a booking is associated with one user).
+- **CleaningService to Bookings:** One-to-Many (A service can have multiple bookings, but a booking is associated with one service).
+- **Bookings to Transactions:** One-to-One (A booking can have one transaction).
+
+### API Endpoints:
+
+1. **Book a Cleaning Service:**
+   - Endpoint: `/api/bookings`
+   - Method: `POST`
+   - Request Body: `{ userID, serviceID, bookingDate }`
+   - Action: Create a new booking for the specified user and service.
+
+2. **Get User's Bookings:**
+   - Endpoint: `/api/bookings/user/:userID`
+   - Method: `GET`
+   - Action: Retrieve all bookings for a specific user.
+
+3. **Get Booking Details:**
+   - Endpoint: `/api/bookings/:bookingID`
+   - Method: `GET`
+   - Action: Retrieve details of a specific booking.
+
+4. **Complete Booking:**
+   - Endpoint: `/api/bookings/:bookingID/complete`
+   - Method: `PUT`
+   - Action: Mark a booking as completed.
+
+5. **Make a Payment:**
+   - Endpoint: `/api/transactions`
+   - Method: `POST`
+   - Request Body: `{ bookingID, amount, paymentMethod }`
+   - Action: Record a transaction for a booking.
+
+6. **Get User's Transactions:**
+   - Endpoint: `/api/transactions/user/:userID`
+   - Method: `GET`
+   - Action: Retrieve all transactions for a specific user.
+
+### Important Notes:
+
+- Ensure proper authentication and authorization mechanisms.
+- Use proper error handling and validation for user inputs.
+- Implement secure coding practices, especially when dealing with payments.
+- Consider using a robust ORM (Object-Relational Mapping) library to interact with the database.
+
+This is a basic example, and the actual implementation may vary based on your specific requirements and the technology stack you are using.

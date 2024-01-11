@@ -1,0 +1,36 @@
+const mongoose = require('mongoose');
+
+const transactionSchema = new mongoose.Schema({
+  userID: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  cleaningServiceID: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CleaningService',
+    required: true
+  },
+  bookingID: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Booking',
+    required: true
+  },
+  amount: {
+    type: Number,
+    required: true
+  },
+  transactionDate: {
+    type: Date,
+    default: Date.now
+  },
+  paymentMethod: {
+    type: String,
+    required: true
+  }
+});
+
+const Transaction = mongoose.model('Transaction', transactionSchema);
+
+module.exports = Transaction;
+
