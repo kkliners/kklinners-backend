@@ -1,26 +1,46 @@
 const mongoose = require('mongoose');
 
+
 const cleaningServiceSchema = new mongoose.Schema({
-  userID: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Reference to the User collection
-    required: true
+  user_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User', // Reference to the User collection
+      required: true
   },
-  serviceName: {//for examble moving ,cleaning,laundery
-    type: String,
-    required: true
+  serviceName: {
+      type: String,
+      required: true
   },
-  serviceDescription: {//standard cleaning,deep cleaning,move-in cleaning,office cleaning etc
-    type: String,
-    required: true
+  serviceCategory: {
+      type: String,
+      required: true
   },
-  serviceRate: { // Include a field to store the calculated rate
-    type: Number
+  serviceRate: {
+      type: Number
   },
-  areas: ['Bedroom', 'Living Room', 'Kitchen', 'Bathroom','Terrace','Dining Room','Garage']
-  // Array of area names
+  areas: ['Bedroom', 'Living Room', 'Kitchen', 'Bathroom', 'Terrace', 'Dining Room', 'Garage'],
+  booking: {
+      bookingDate: {
+          type: Date,
+          required: true,
+      },
+      bookingTime: {
+          type: String, // Change the type to String
+          required: true,
+      },
+      location: {
+          type: String,
+      },
+      paymentStatus: {
+          type: String,
+          enum: ['pending', 'paid', 'failed'],
+          default: 'pending',
+      },
+      // Add more booking-related properties as needed
+  }
 });
 
-const CleaningService = mongoose.model('CleaningService', cleaningServiceSchema);
+const Service = mongoose.model('Service', cleaningServiceSchema);
 
-module.exports = CleaningService;
+module.exports = Service;
+

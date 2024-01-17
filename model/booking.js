@@ -1,37 +1,44 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
-
-const bookedServicesSchema = new Schema({
-  user: {
-    type: Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
+const cleaningServiceSchema = new mongoose.Schema({
+  user_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User', // Reference to the User collection
+      required: true
   },
-  service: {
-    type: Schema.Types.ObjectId,
-    ref: 'Service',
-    required: true,
+  serviceName: {
+      type: String,
+      required: true
   },
-  bookingDate: {
-    type: Date,
-    required: true,
+  serviceCategory: {
+      type: String,
+      required: true
   },
-  // Additional properties for the booked service
-  duration: {
-    type: Number, // Duration in minutes or hours, as needed
+  serviceRate: {
+      type: Number
   },
-  location: {
-    type: String, // Service location (e.g., address)
-  },
-  price: {
-    type: Number, // Total price of the service
-  },
-  paymentStatus: {
-    type: String, // Payment status (e.g., 'paid', 'pending', 'failed')
-  },
-  // Add more properties as needed
+  areas: ['Bedroom', 'Living Room', 'Kitchen', 'Bathroom', 'Terrace', 'Dining Room', 'Garage'],
+  booking: {
+      bookingDate: {
+          type: Date,
+          required: true,
+      },
+      bookingTime: {
+          type: String, // Change the type to String
+          required: true,
+      },
+      location: {
+          type: String,
+      },
+      paymentStatus: {
+          type: String,
+          enum: ['pending', 'paid', 'failed'],
+          default: 'pending',
+      },
+      // Add more booking-related properties as needed
+  }
 });
 
-const BookedService = mongoose.model('BookedService', bookedServicesSchema);
+const Service = mongoose.model('Service', cleaningServiceSchema);
 
-module.exports = BookedService;
+module.exports = Service;

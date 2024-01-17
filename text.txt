@@ -1,3 +1,17 @@
+thought:after cleaning service is posted then we check if payment have been made,
+if no then go to booking -then sendto transaction
+
+
+get category
+get type of cleaning
+get user payload area,date 
+---so to create post a cleaning service,the id of the user is parsed in which when found then that means such user have right to create a booking 
+step:1 find user id
+     2 query if user have a pending cleaning service booking
+     3 if notget all user payloads:service_type,cleaning_category,items_to_be_cleaned[area which we will calculate based on number of spaces picked],get_date,redirect_to_secure_payment_field_and (if payment successful,save it to user payment value in db.query db to find then send the amount to payload to process to post booking),whiched is then saved in booked services i  our db.
+     which have a user id reference,
+     which we will populate for user see their bookings  
+
 const mongoose = require('mongoose');
 
 const cleaningServiceSchema = new mongoose.Schema({

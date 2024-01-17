@@ -8,7 +8,7 @@ const transactionSchema = new mongoose.Schema({
   },
   cleaningServiceID: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'CleaningService',
+    ref: 'Service',
     required: true
   },
   bookingID: {

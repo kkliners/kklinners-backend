@@ -5,6 +5,7 @@ const dbConnect = require('./config/dbConnect');
 var cookieParser = require('cookie-parser')
 const authRoute = require('./route/auth')
 const userRoute = require('./route/user')
+const bookingRoute = require('./route/book')
 const session = require('express-session');
 const passport = require('passport');
 const {notFound,errorHandler} = require('./middleware/errorHandler')
@@ -27,6 +28,7 @@ app.use(passport.session());
 
 app.use('/api/v1/auth',authRoute)
 app.use('/api/v1/user',userRoute)
+app.use('/api/v1/booking',bookingRoute)
 //Route Calling
 
 //MidleWare Calling
