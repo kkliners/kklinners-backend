@@ -66,11 +66,11 @@ class PaymentError extends Error {
 
   // Your API endpoint or route handler
 const getUserServices = asyncHandler(async (req, res) => {
-    const userId = req.params.userId; // Assuming userId is passed as a parameter
+    const user_id = req.params.user_id;
   
     try {
       // Fetch services for the given user_id
-      const userServices = await Service.find({ user_id: userId });
+      const userServices = await Service.find({ user_id: user_id });
   
       if (userServices.length === 0) {
         return res.status(404).json({ message: 'No services found for the user' });

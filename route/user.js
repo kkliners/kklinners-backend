@@ -4,7 +4,7 @@ const {authMiddleware,isAdmin} =require('../middleware/authMiddleware')
 const {getAllUser,getUser, deleteUser, updateUser,blockUser,unBlockUser,changePassword,forgotPasswordToken, } = require('../controller/userCtrl')
 //Register User;
 //username,email,password,confirm-password;
-
+const {getUserServices}= require('../controller/bookingCtrl')
 route.get('/all-users',isAdmin,authMiddleware, getAllUser)
 route.get('/:id',authMiddleware, getUser)
 route.delete('/:id',authMiddleware,deleteUser)
@@ -17,5 +17,5 @@ route.put('/reset-password', changePassword);
 route.post('/forgot-password-token', forgotPasswordToken);
 // Define the reset password route with a token parameter
 // route.put('/reset-password/token', );
-
+route.get('/services/:user_id',authMiddleware,getUserServices)
 module.exports = route;

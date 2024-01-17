@@ -4,6 +4,6 @@ const {createCleaningService}=require('../controller/bookingCtrl')
 
 
 route.post('/create-service',createCleaningService)
-route.get('/services')
+
 
 module.exports = route;
