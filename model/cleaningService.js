@@ -36,8 +36,10 @@ const cleaningServiceSchema = new mongoose.Schema({
           enum: ['pending', 'paid', 'failed'],
           default: 'pending',
       },
-      // Add more booking-related properties as needed
+     
   }
+},{
+    timestamps: true 
 });
 
 const Service = mongoose.model('Service', cleaningServiceSchema);
