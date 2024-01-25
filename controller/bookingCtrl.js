@@ -3,7 +3,8 @@ const asyncHandler = require('express-async-handler');
 const Service = require('../model/cleaningService');
 const { Error } = require('mongoose');
 const calculateServiceRate = require('../utils/calculateRate')
-
+const https = require('https');
+const axios = require('axios');
   
   
 class PaymentError extends Error {
@@ -13,123 +14,105 @@ class PaymentError extends Error {
   }
 }
 
-// Function to make Paystack payment
-const https = require('https');
-const querystring = require('querystring');
+//Note,when a service have been posted,so to pay,you go to the db and check the payment price generated and if the money you inputed aint complete then it gets rejected 
+//create different cleaning space price based on the the type of cleaning generated eg deep,light,office,cleaning
 
-const paystackPayment = (amount, email) => {
-  return new Promise((resolve, reject) => {
-    // Set the Paystack API endpoint for initializing transactions
-    const endpoint = '/transaction/initialize';
+const paystackPayment = asyncHandler(async (req, res) => {
+  try {
+    const { email, amount } = req.body;
 
-    // Construct the request payload
-    const payload = {
-      amount: amount * 100, // Paystack API expects the amount in kobo (multiply by 100 for naira)
+    const response = await axios.post('https://api.paystack.co/transaction/initialize', {
       email,
-      currency: 'NGN', // Set the currency (Nigerian Naira)
-    };
-
-    const options = {
-      hostname: 'api.paystack.co',
-      port: 443,
-      path: endpoint,
-      method: 'POST', // Use POST method for initializing transactions
+      amount,
+    }, {
       headers: {
-        Authorization: 'Bearer sk_test_404411a98099866d1972d924fea7d3503e83b9d0',
+        Authorization: 'Bearer sk_test_404411a98099866d1972d924fea7d3503e83b9d0', // Replace with your actual key
         'Content-Type': 'application/json',
       },
-    };
-
-    const reqPaystack = https.request(options, (response) => {
-      let data = '';
-
-      response.on('data', (chunk) => {
-        data += chunk;
-      });
-
-      response.on('end', () => {
-        resolve(JSON.parse(data));
-      });
     });
 
-    reqPaystack.on('error', (error) => {
-      reject(error);
-    });
+    const responseData = response.data;
+    console.log(responseData);
 
-    // Write the payload as the request body
-    reqPaystack.write(JSON.stringify(payload));
-    reqPaystack.end();
-  });
-};
+    if (responseData.status && responseData.data) {
+      const authorizationURL = responseData.data.authorization_url;
+      const accessCode = responseData.data.access_code;
+      const reference = responseData.data.reference;
 
-
-// Route handler to create a cleaning service
-const createCleaningService = asyncHandler(async (req, res) => {
-  try {
-    const { id, serviceName, serviceCategory, areas, bookingDate, bookingTime, location, paymentStatus } = req.body;
-
-    // Check if the payment status is successful
-    if (paymentStatus !== 'paid') {
-      throw new PaymentError('Payment unsuccessful. Please ensure your payment is successful before booking.');
+      res.json({
+        status: true,
+        message: 'Authorization URL created',
+        data: {
+          authorization_url: authorizationURL,
+          access_code: accessCode,
+          reference: reference,
+        },
+      });
+    } else {
+      res.status(500).json({ error: 'Internal Server Error' });
     }
-
-    // Find the user by ID
-    const user = await User.findById(id);
-
-    // Handle user not found
-    if (!user) {
-      return res.status(404).json({
-        error: 'User not found',
-        message: 'The provided user ID does not correspond to any registered user. Please double-check your user ID or register a new account.',
-      });
-    }
-
-    // Calculate the service rate based on the selected areas
-    const serviceRate = calculateServiceRate(areas);
-
-    // Make Paystack payment
-    const paystackResponse = await paystackPayment(serviceRate);
-
-    // Use paystackResponse and serviceRate as needed in your logic
-    console.log('Paystack Response:', paystackResponse);
-
-    // Create a new CleaningService instance
-    const newCleaningService = new Service({
-      user_id: user.id,
-      serviceName,
-      serviceCategory,
-      areas,
-      serviceRate,
-      booking: {
-        bookingDate,
-        bookingTime,
-        location,
-        paymentStatus,
-      },
-      // other fields as needed
-    });
-
-    // Save the new cleaning service to the database
-    await newCleaningService.save();
-
-    // Respond with a success message or the created cleaning service
-    res.status(201).json({ message: 'Cleaning service created and booked successfully', cleaningService: newCleaningService });
   } catch (error) {
-    // Handle custom errors
-    if (error instanceof PaymentError) {
-      return res.status(400).json({ message: error.message }); // Respond with a 400 Bad Request for payment errors
-    }
-
-    // Handle other errors
-    console.error(error.message); // Log the error message
-    res.status(500).json({ message: 'Internal Server Error' });
+    console.error('Error processing Paystack payment:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
-// Your other existing code...
 
 
-  // Your API endpoint or route handler
+//
+ 
+
+
+const createCleaningService = asyncHandler(async (req, res) => {
+    try {
+      const { id, serviceName, serviceCategory, areas, bookingDate, bookingTime, location  } = req.body;
+      const paymentStatus = 'pending'
+      // Check if the payment status is successful
+      if (paymentStatus !== 'pending') {
+        throw new PaymentError('Payment unsuccessful');
+      }
+  
+      const user = await User.findById(id);
+  
+      // Calculate the service rate based on the selected areas
+      const serviceRate = calculateServiceRate(areas);
+  
+      // Create a new CleaningService instance
+      const newCleaningService = new Service({
+        user_id: user.id,
+        serviceName,
+        serviceCategory,
+        areas,
+        serviceRate,
+        booking: {
+          bookingDate,
+          bookingTime,
+          location,
+          paymentStatus,
+        },
+        // other fields as needed
+      });
+  
+      // Save the new cleaning service to the database
+      await newCleaningService.save();
+  
+      // Respond with a success message or the created cleaning service
+      res.status(201).json({ message: 'Cleaning service created and booked successfully', cleaningService: newCleaningService });
+    } catch (error) {
+      // Handle custom errors
+      if (error instanceof PaymentError) {
+        return res.status(400).json({ message: error.message }); // Respond with a 400 Bad Request for payment errors
+      }
+  
+      // Handle other errors
+      console.error(error.message); // Log the error message
+      res.status(500).json({ message: 'Internal Server Error' });
+    }
+  });
+  
+
+
+  //Get all User's Service
 const getUserServices = asyncHandler(async (req, res) => {
     const user_id = req.params.user_id;
   
@@ -148,6 +131,11 @@ const getUserServices = asyncHandler(async (req, res) => {
       res.status(500).json({ message: 'Internal Server Error' });
     }
   });
+
+
+
+//Get a Single Service
+
   const getSingleService = asyncHandler(async (req, res) => {
     const userId = req.params.userId; // Assuming userId is passed as a parameter
     const serviceId = req.params.serviceId;
@@ -169,6 +157,58 @@ const getUserServices = asyncHandler(async (req, res) => {
 });
 
 
+//User cancelled Service services
+const cancelService = asyncHandler(async (req, res) => {
+  const serviceId = req.params.serviceId;
+  const { cancellationReason } = req.body;
+
+  try {
+    // Find the service by ID
+    const service = await Service.findById(serviceId);
+
+    // Check if the service exists
+    if (!service) {
+      return res.status(404).json({ message: 'Cleaning service not found' });
+    }
+
+    // Check if the service is cancellable (e.g., payment status is pending)
+    if (service.booking.paymentStatus !== 'pending') {
+      return res.status(400).json({ message: 'Cannot cancel a completed or ongoing service' });
+    }
+
+    // Update the service with the cancellation reason and set the cancellation status
+    service.booking.cancelled = 'cancel';
+    service.booking.cancellationReason = cancellationReason;
+
+    // Save the updated service to the database
+    await service.save();
+
+    // Respond with a success message or the updated cleaning service
+    res.status(200).json({ message: 'Cleaning service canceled successfully', cleaningService: service });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+//Get a specific User Canceled Services
+const userCancelledServices = asyncHandler(async(req,res)=>{
+  const userId = req.params.userId;
+
+  try {
+    // Find all canceled services for the user
+    const cancelledServices = await Service.find({
+      'user_id': userId,
+      'booking.cancelled': 'cancel',
+    });
+
+    // Respond with the list of canceled services
+    res.status(200).json({ cancelledServices });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+})
 // Export the route handler
 
-module.exports = { createCleaningService,getUserServices ,getSingleService,paystackPayment};
+module.exports = { createCleaningService,getUserServices ,getSingleService,paystackPayment,cancelService,userCancelledServices};

@@ -133,3 +133,73 @@ Building a backend for a cleaning service app involves designing a database sche
 - Consider using a robust ORM (Object-Relational Mapping) library to interact with the database.
 
 This is a basic example, and the actual implementation may vary based on your specific requirements and the technology stack you are using.
+
+
+
+// const createCleaningService = asyncHandler(async (req, res) => {
+//   try {
+//     const { id, serviceName, serviceCategory, areas, bookingDate, bookingTime, location, paymentStatus } = req.body;
+
+//     // Check if the payment status is successful
+//     if (paymentStatus !== 'paid') {
+//       throw new PaymentError('Payment unsuccessful. Please ensure your payment is successful before booking.');
+//     }
+
+//     // Assuming you have a User model
+//     const user = await User.findById(id);
+
+//     if (!user) {
+//       return res.status(404).json({ error: 'User not found', message: 'The provided user ID does not correspond to any registered user. Please double-check your user ID or register a new account.' });
+//     }
+
+//     // Calculate the service rate based on the selected areas
+//     const serviceRate = calculateServiceRate(areas);
+
+//     // Wrap the paystackPayment in a Promise
+//     const paymentResponse = await new Promise((resolve, reject) => {
+//       paystackPayment(req, {
+//         json: (data) => resolve(data),
+//         status: (code) => reject(new Error(`HTTP status ${code}`)),
+//       });
+//     });
+
+//     if (paymentResponse.status) {
+//       const newCleaningService = new Service({
+//         user_id: user.id,
+//         serviceName,
+//         serviceCategory,
+//         areas,
+//         serviceRate,
+//         booking: {
+//           bookingDate,
+//           bookingTime,
+//           location,
+//           paymentStatus,
+//         },
+//         // other fields as needed
+//       });
+
+//       // Save the new cleaning service to the database
+//       await newCleaningService.save();
+
+//       // Respond with a success message or the created cleaning service
+//       res.status(201).json({ message: 'Cleaning service created and booked successfully', cleaningService: newCleaningService });
+//     } else {
+//       throw new PaymentError(paymentResponse.message);
+//     }
+//   } catch (error) {
+//     // Ensure that the response object is defined before using it
+//     if (res) {
+//       // Handle custom errors
+//       if (error instanceof PaymentError) {
+//         return res.status(400).json({ message: error.message }); // Respond with a 400 Bad Request for payment errors
+//       }
+
+//       // Handle other errors
+//       console.error(error.message); // Log the error message
+//       res.status(500).json({ message: 'Internal Server Error' });
+//     } else {
+//       console.error('Error in createCleaningService:', error);
+//     }
+//   }
+// });

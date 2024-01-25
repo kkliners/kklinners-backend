@@ -36,7 +36,14 @@ const cleaningServiceSchema = new mongoose.Schema({
           enum: ['pending', 'paid', 'failed'],
           default: 'pending',
       },
-     
+      cancelled:{
+        type:String,
+        enum: ['pending', 'completed', 'cancel'],
+          default: 'pending',
+      },
+      cancellationReason: {
+        type: String,
+      },
   }
 },{
     timestamps: true 

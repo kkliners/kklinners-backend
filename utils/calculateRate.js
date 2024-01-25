@@ -4,7 +4,7 @@ const calculateServiceRate = (selectedAreas) => {
     const numberOfAreas = selectedAreas.length;
     const transport = 2000
     // Calculate the total service rate
-    const serviceRate = baseRatePerArea * numberOfAreas + transport;
+    const serviceRate = baseRatePerArea * numberOfAreas + transport * 100;
   
     return serviceRate;
   };
