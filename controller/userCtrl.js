@@ -3,7 +3,7 @@ const asyncHandler = require('express-async-handler');
 const {token }= require('../config/jwt')
 const {validateMongoDbId} = require('../utils/validateMongodbId');
 const sendEmail = require('../utils/email')
-
+const cloudinary = require('../utils/cloudinary')
 
 //register user
 const registerUser = asyncHandler(async (req, res) => {
@@ -91,73 +91,71 @@ const loginUser = asyncHandler(async (req, res) => {
 });
 
 // filldata user after login and register
-
 const filldata = asyncHandler(async (req, res) => {
   try {
-      const userId = req.body;
-      validateMongoDbId(userId);
+    const userId = req.body;
+    validateMongoDbId(userId);
 
-      const user = await User.findById(userId);
+    const user = await User.findById(userId);
 
-      if (!user) {
-          return res.status(404).json({ success: false, error: 'User not found' });
-      }
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
 
-      // Validate that all required fields are present in the request body
-      const { username, firstName, lastName, mobile, address } = req.body;
-      if (!username || !firstName || !lastName || !mobile || !address) {
-          return res.status(400).json({
-              success: false,
-              error: 'All fields (username, firstName, lastName, mobile, address) are required',
-          });
-      }
+    // Validate required fields
+    const { username, firstName, lastName, mobile, address, profileImage } = req.body;
+    if (!username || !firstName || !lastName || !mobile || !address) {
+      return res.status(400).json({
+        success: false,
+        error: 'All fields (username, firstName, lastName, mobile, address) are required',
+      });
+    }
 
-      // Check if the provided username already exists
-      const usernameExists = await User.findOne({ username });
-      if (usernameExists && usernameExists._id.toString() !== userId) {
-          return res.status(400).json({
-              success: false,
-              error: 'Username already exists',
-          });
-      }
-
-      // Update user properties based on the request body
-      user.username = username;
-      user.firstName = firstName;
-      user.lastName = lastName;
-      user.phone = mobile;
-      user.address = address;
-
-      // Assuming 'userData' is an array in your schema
-      if (!user.userData) {
-          user.userData = [];
-      }
-
-      // Add the existing user data to the 'userData' array
-      user.userData.push({
-        username: user.username,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        mobile: user.mobile,
-        address: user.address,
+    const img = await cloudinary.uploader.upload(profileImage, {
+      folder: 'profileImage',
     });
-
-      // Save the updated user document
-      await user.save();
-
-      res.status(200).json({
-          success: true,
-          message: 'User updated successfully',
-          data: user,
+    console.log(img)
+    // Check for existing username
+    const usernameExists = await User.findOne({ username });
+    if (usernameExists && usernameExists._id.toString() !== userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Username already exists',
       });
+    }
+
+    // Update user properties
+    user.username = username;
+    user.firstName = firstName;
+    user.lastName = lastName;
+    user.phone = mobile;
+    user.address = address;
+    user.profileImage = { // Assign object properties directly
+      public_id: img.public_id,
+      url: img.secure_url,
+    };
+
+    // Reconsider the purpose of 'userData' array
+    // If it's not essential, remove this section
+    if (!user.userData) {
+      user.userData = [];
+    }
+    // user.userData.push({ ... }); // Potentially unnecessary
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'User updated successfully',
+      data: user,
+    });
   } catch (error) {
-      console.error(error);
-
-      res.status(500).json({
-          success: false,
-          error: 'Internal Server Error',
-          details: error.message || error,
-      });
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      details: error.message || error,
+    });
   }
 });
 
