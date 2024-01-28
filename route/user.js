@@ -15,7 +15,6 @@ route.put('/unblock-user/:id',isAdmin,authMiddleware,unBlockUser)
 route.put('/reset-password', changePassword);
 // app.use('/logout', authMiddleware, logoutUser);
 route.post('/forgot-password-token', forgotPasswordToken);
-// Define the reset password route with a token parameter
-// route.put('/reset-password/token', );
+
 route.get('/services/:user_id',authMiddleware,getUserServices)
 module.exports = route;

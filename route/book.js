@@ -17,10 +17,10 @@ route.get('/services/pending', getAllPendingServices);
 // Get all upcoming services (comment for clarification)
 route.get('/services/upcoming', getAllUpcomingServices);
 // Endpoint to get all pending services for a specific user
-router.get('/user/:userId/services/pending', getUserPendingServices);
+route.get('/user/:userId/services/pending', getUserPendingServices);
 // Endpoint to get all upcoming services for a specific user
-router.get('/user/:userId/services/upcoming', getUserUpcomingServices);
+route.get('/user/:userId/services/upcoming', getUserUpcomingServices);
 // Endpoint to get all completed services for a specific user
-router.get('/user/:userId/services/completed', getUserCompletedServices);
+route.get('/user/:userId/services/completed', getUserCompletedServices);
 
 module.exports = route;
