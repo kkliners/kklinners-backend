@@ -36,7 +36,7 @@ const cleaningServiceSchema = new mongoose.Schema({
           enum: ['pending', 'paid', 'failed'],
           default: 'pending',
       },
-      cancelled:{
+      progress:{
         type:String,
         enum: ['pending', 'completed', 'cancel'],
           default: 'pending',

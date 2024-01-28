@@ -177,7 +177,7 @@ const cancelService = asyncHandler(async (req, res) => {
     }
 
     // Update the service with the cancellation reason and set the cancellation status
-    service.booking.cancelled = 'cancel';
+    service.booking.progress = 'cancel';
     service.booking.cancellationReason = cancellationReason;
 
     // Save the updated service to the database
@@ -199,7 +199,7 @@ const userCancelledServices = asyncHandler(async(req,res)=>{
     // Find all canceled services for the user
     const cancelledServices = await Service.find({
       'user_id': userId,
-      'booking.cancelled': 'cancel',
+      'booking.progress': 'cancel',
     });
 
     // Respond with the list of canceled services
@@ -211,4 +211,111 @@ const userCancelledServices = asyncHandler(async(req,res)=>{
 })
 // Export the route handler
 
-module.exports = { createCleaningService,getUserServices ,getSingleService,paystackPayment,cancelService,userCancelledServices};
+
+// Get all upcoming services
+const getAllUpcomingServices = asyncHandler(async (req, res) => {
+  try {
+    const currentDate = new Date();
+
+    // Find all services with booking dates in the future
+    const upcomingServices = await Service.find({
+      'booking.bookingDate': { $gte: currentDate },
+      'booking.progress': { $ne: ['cancel','completed'] }, // Exclude canceled services
+    });
+
+    // Respond with the list of upcoming services
+    res.status(200).json({ upcomingServices });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+// Get all completed services
+const getAllCompletedServices = asyncHandler(async (req, res) => {
+  try {
+    // Find all services with progress 'completed'
+    const completedServices = await Service.find({ 'booking.progress': 'completed' });
+
+    // Respond with the list of completed services
+    res.status(200).json({ completedServices });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+
+// Get all pending services
+const getAllPendingServices = asyncHandler(async (req, res) => {
+  try {
+    // Find all services with payment status 'pending'
+    const pendingServices = await Service.find({ 'booking.paymentStatus': 'pending' });
+
+    // Respond with the list of pending services
+    res.status(200).json({ pendingServices });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+
+
+// Controller function to get all pending services for a specific user
+const getUserPendingServices = asyncHandler(async (req, res) => {
+  const userId = req.params.userId;
+
+  try {
+    const userPendingServices = await Service.find({
+      'user_id': userId,
+      'booking.paymentStatus': 'pending',
+    });
+
+    res.status(200).json({ userPendingServices });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+// Controller function to get all upcoming services for a specific user
+const getUserUpcomingServices = asyncHandler(async (req, res) => {
+  const userId = req.params.userId;
+
+  try {
+    const currentDate = new Date();
+    const userUpcomingServices = await Service.find({
+      'user_id': userId,
+      'booking.bookingDate': { $gte: currentDate },
+      'booking.progress': { $nin: ['cancel', 'completed'] },
+    });
+
+    res.status(200).json({ userUpcomingServices });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+// Controller function to get all completed services for a specific user
+const getUserCompletedServices = asyncHandler(async (req, res) => {
+  const userId = req.params.userId;
+
+  try {
+    const userCompletedServices = await Service.find({
+      'user_id': userId,
+      'booking.progress': 'completed',
+    });
+
+    res.status(200).json({ userCompletedServices });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+module.exports = { createCleaningService,getUserServices ,getSingleService,paystackPayment,cancelService,userCancelledServices,getAllCompletedServices,getAllUpcomingServices,getAllPendingServices,getUserCompletedServices,getUserUpcomingServices,getUserPendingServices};
