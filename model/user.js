@@ -62,6 +62,13 @@ const userSchema = new Schema({
   token: {
     type: String,
   },
+  otp: {
+    type: String,
+    
+  },
+  expiresAt: {
+    type: Date,
+  },
   role:{
     type:String,
     default:"user",

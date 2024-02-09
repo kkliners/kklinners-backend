@@ -1,20 +1,15 @@
 const express = require('express')
 const route = express.Router()
 const {authMiddleware,isAdmin} =require('../middleware/authMiddleware')
-const {getAllUser,getUser, deleteUser, updateUser,blockUser,unBlockUser,changePassword,forgotPasswordToken, } = require('../controller/userCtrl')
+const {getAllUser,getUser, deleteUser, updateUser,blockUser,unBlockUser} = require('../controller/userCtrl')
 //Register User;
 //username,email,password,confirm-password;
 const {getUserServices}= require('../controller/bookingCtrl')
 route.get('/all-users',isAdmin,authMiddleware, getAllUser)
 route.get('/:id',authMiddleware, getUser)
 route.delete('/:id',authMiddleware,deleteUser)
-route.put('/edit-user',authMiddleware,updateUser)
 route.put('/edit-user/:id',authMiddleware,updateUser)
 route.put('/block-user/:id',isAdmin,authMiddleware,blockUser)
 route.put('/unblock-user/:id',isAdmin,authMiddleware,unBlockUser)
-route.put('/reset-password', changePassword);
-// app.use('/logout', authMiddleware, logoutUser);
-route.post('/forgot-password-token', forgotPasswordToken);
-
 route.get('/services/:user_id',authMiddleware,getUserServices)
 module.exports = route;

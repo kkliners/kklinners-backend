@@ -3,49 +3,129 @@ const asyncHandler = require('express-async-handler');
 const {token }= require('../config/jwt')
 const {validateMongoDbId} = require('../utils/validateMongodbId');
 const sendEmail = require('../utils/email')
-const cloudinary = require('../utils/cloudinary')
+const cloudinary = require('../utils/cloudinary');
+function generateOTP() {
+  // Generate a 4-digit random OTP
+  const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
-//register user
+  return otp;
+}
+
+//SignUP USer And send email
 const registerUser = asyncHandler(async (req, res) => {
-    try {
-      const { email, password, confirmPassword } = req.body;
-  
-      if (password !== confirmPassword) {
-        return res.status(400).json({
-          success: false,
-          error: 'Passwords do not match',
-        });
-      }
-  
-      delete req.body.confirmPassword;
-  
-      const userExist = await User.findOne({ email });
-  
-      if (!userExist) {
-        const newUser = await User.create(req.body);
-  
-        res.status(201).json({
-          success: true,
-          message: 'User registered successfully',
-          data: newUser,
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          error: 'User already exists',
-        });
-      }
-    } catch (error) {
-      console.error(error);
-  
-      res.status(500).json({
+  try {
+    const { email, password, confirmPassword } = req.body;
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({
         success: false,
-        error: 'Internal Server Error',
-        details: error.message || error,
+        error: 'Passwords do not match',
       });
     }
-  });
-  
+
+    delete req.body.confirmPassword;
+
+    const userExist = await User.findOne({ email });
+
+    if (!userExist) {
+      const newUser = await User.create(req.body);
+
+      // Generate and save OTP
+      const otp = generateOTP(); // Implement this function
+      newUser.otp = otp;
+      await newUser.save();
+
+      // Send verification email with OTP
+      const resetUrl = `Use this ${otp} to verify your email`;
+      const emailData = {
+        to: email,
+        subject: 'Verify Email',
+        text: `Use this ${otp} to verify your email`,
+        html: resetUrl,
+      };
+      await sendEmail(emailData, req, res);
+
+      res.status(201).json({
+        success: true,
+        message: 'User registered successfully. Verification email sent.',
+        data: newUser,
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'User already exists',
+      });
+    }
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      details: error.message || error,
+    });
+  }
+});
+
+
+
+const verifyEmail = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+
+  try {
+    // Find the user by email
+    const user = await User.findOne({ email });
+
+    // If the user doesn't exist, return an error
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    // Check if the provided OTP matches the stored OTP
+    if (user.otp !== otp) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid OTP',
+      });
+    }
+
+    // Check if the OTP is still valid (not expired)
+    if (user.otp.expiresAt && user.otp.expiresAt < new Date()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Expired OTP',
+      });
+    }
+
+    // Mark the email as verified
+    user.isEmailVerified = true;
+
+    // Invalidate the OTP (mark it as used or remove it)
+    user.otp = undefined; // Adjust based on your schema
+
+    // Save the updated user
+    await user.save();
+
+    // Respond with a success message
+    res.status(200).json({
+      success: true,
+      message: 'Email verification successful',
+      data: user,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      details: error.message || error,
+    });
+  }
+});
+
 
 
 // Login User
@@ -298,7 +378,7 @@ const veriffyPin = asyncHandler(async(req,res)=>{
     }
     console.log('this worked')
     // Check if the provided PIN matches the stored PIN
-    if (pin != user.verificationPin) {
+    if (pin != user.verificationTokenExpires) {
       return res.status(401).json({ success: false, error: 'Incorrect PIN' });
     };
 
@@ -320,20 +400,29 @@ const veriffyPin = asyncHandler(async(req,res)=>{
 
 
 const changePassword = asyncHandler(async (req, res) => {
-  const { id } = req.body; // Assuming the parameter is named 'id'
-  validateMongoDbId(id);
+  try {
+    // Assuming you want to get the new password and email from the request body
+    const { password, email } = req.body;
 
-  // Assuming you want to get the new password from the request body
-  const { password } = req.body;
+    // Find the user in the database based on the email
+    const user = await User.findOne({ email });
 
-  const user = await User.findById(id);
+    // If the user is not found, return an error
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
-  if (password) {
-    user.password = password;
-    const updatedPassword = await user.save();
-    res.json(updatedPassword);
-  } else {
-    res.json(user);
+    // Update the password if a new one is provided
+    if (password) {
+      user.password = password;
+      const updatedUser = await user.save();
+      res.json(updatedUser);
+    } else {
+      res.status(400).json({ message: 'Password not provided' });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 
@@ -368,31 +457,17 @@ const forgotPasswordToken = asyncHandler(async (req, res) => {
      // res.status(500).json({ error: 'An error occurred' });
   }
 });
-// const resetPassword = asyncHandler(async (req, res) => {
-//   const { password } = req.body;
-//   const { token } = req.params;
-//   const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
-//   const user = await User.findOne({
-//     passwordResetToken: hashedToken,
-//     passwordResetExpires: { $gt: Date.now() }, // Use Date.now() instead of Date.name()
-//   });
+// const otp = await user.createVerificationToken();
+//      await user.save(); 
+//      const resetUrl = `Use this ${token} to verify your email`;
+//      const emailData = {
+//         to: email,
+//         subject: 'verify Email',
+//         text: 'hey user',
+//         htm: resetUrl,
+//      };
+//      await sendEmail(emailData, req, res);//pass the data to email create
+//      res.json(token);
 
-//   if (!user) {
-//     throw new Error('Token expired, please try again later');
-//   }
-
-//   user.password = password;
-//   user.passwordResetToken = undefined;
-//   user.passwordResetExpires = undefined;
-
-//   await user.save();
-
-//   // Respond with a more generic message or omit the response data for security reasons
-//   res.json({ message: 'Password reset successful' });
-// });
-
-
-
-//Send a four digit token instead and veriffy email
-module.exports = {registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,veriffyPin }
+module.exports = {registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,veriffyPin ,verifyEmail}

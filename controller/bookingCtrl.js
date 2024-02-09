@@ -272,7 +272,7 @@ const getUserPendingServices = asyncHandler(async (req, res) => {
   try {
     const userPendingServices = await Service.find({
       'user_id': userId,
-      'booking.paymentStatus': 'pending',
+      'booking.progress': 'pending',
     });
 
     res.status(200).json({ userPendingServices });
@@ -310,12 +310,16 @@ const getUserCompletedServices = asyncHandler(async (req, res) => {
       'user_id': userId,
       'booking.progress': 'completed',
     });
+    if (userCompletedServices.length === 0) {
+      return res.status(404).json({ message: 'No completed services found for the user.' });
+    }
 
+    
     res.status(200).json({ userCompletedServices });
   } catch (error) {
     console.error(error.message);
     res.status(500).json({ message: 'Internal Server Error' });
   }
-});
+});         
 
 module.exports = { createCleaningService,getUserServices ,getSingleService,paystackPayment,cancelService,userCancelledServices,getAllCompletedServices,getAllUpcomingServices,getAllPendingServices,getUserCompletedServices,getUserUpcomingServices,getUserPendingServices};
