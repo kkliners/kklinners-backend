@@ -27,7 +27,12 @@ const transactionSchema = new mongoose.Schema({
   paymentMethod: {
     type: String,
     required: true
-  }
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User', // Reference the User model for the creator of the transaction
+    required: true,
+  },
 });
 
 const Transaction = mongoose.model('Transaction', transactionSchema);

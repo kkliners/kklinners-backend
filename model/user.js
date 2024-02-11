@@ -81,6 +81,7 @@ const userSchema = new Schema({
   passwordChangeAt:Date,
   verificationTokenExpires:Number,
   passwordResetExpires:Date,
+  
 });
 
 //Encrypt incoming registered password

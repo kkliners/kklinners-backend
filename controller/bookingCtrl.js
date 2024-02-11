@@ -5,7 +5,104 @@ const { Error } = require('mongoose');
 const calculateServiceRate = require('../utils/calculateRate')
 const https = require('https');
 const axios = require('axios');
+//make sure when the price is generated it is then parsed in paystack amount to be paid
   
+// class PaymentError extends Error {
+//   constructor(message) {
+//     super(message);
+//     this.name = 'PaymentError';
+//   }
+// }
+
+//Note,when a service have been posted,so to pay,you go to the db and check the payment price generated and if the money you inputed aint complete then it gets rejected 
+//create different cleaning space price based on the the type of cleaning generated eg deep,light,office,cleaning
+
+// const paystackPayment = asyncHandler(async (req, res) => {
+//   try {
+//     const { email, amount } = req.body;
+
+//     const response = await axios.post('https://api.paystack.co/transaction/initialize', {
+//       email,
+//       amount:serviceRate,
+//     }, {
+//       headers: {
+//         Authorization: 'Bearer sk_test_404411a98099866d1972d924fea7d3503e83b9d0', // Replace with your actual key
+//         'Content-Type': 'application/json',
+//       },
+//     });
+
+//     const responseData = response.data;
+//     console.log(responseData);
+
+//     if (responseData.status && responseData.data) {
+//       const authorizationURL = responseData.data.authorization_url;
+//       const accessCode = responseData.data.access_code;
+//       const reference = responseData.data.reference;
+
+//       res.json({
+//         status: true,
+//         message: 'Authorization URL created',
+//         data: {
+//           authorization_url: authorizationURL,
+//           access_code: accessCode,
+//           reference: reference,
+//         },
+//       });
+//     } else {
+//       res.status(500).json({ error: 'Internal Server Error' });
+//     }
+//   } catch (error) {
+//     console.error('Error processing Paystack payment:', error);
+//     res.status(500).json({ error: 'Internal Server Error' });
+//   }
+// });
+
+// const createCleaningService = asyncHandler(async (req, res) => {
+//     try {
+//       const { id, serviceName, serviceCategory, areas, bookingDate, bookingTime, location  } = req.body;
+//       const paymentStatus = 'pending'
+//       // Check if the payment status is successful
+//       if (paymentStatus !== 'pending') {
+//         throw new PaymentError('Payment unsuccessful');
+//       }
+  
+//       const user = await User.findById(id);
+  
+//       // Calculate the service rate based on the selected areas
+//       const serviceRate = calculateServiceRate(areas);
+  
+//       // Create a new CleaningService instance
+//       const newCleaningService = new Service({
+//         user_id: user.id,
+//         serviceName,
+//         serviceCategory,
+//         areas,
+//         serviceRate,
+//         booking: {
+//           bookingDate,
+//           bookingTime,
+//           location,
+//           paymentStatus,
+//         },
+//         // other fields as needed
+//       });
+  
+//       // Save the new cleaning service to the database
+//       await newCleaningService.save();
+  
+//       // Respond with a success message or the created cleaning service
+//       res.status(201).json({ message: 'Cleaning service created and booked successfully', cleaningService: newCleaningService });
+//     } catch (error) {
+//       // Handle custom errors
+//       if (error instanceof PaymentError) {
+//         return res.status(400).json({ message: error.message }); // Respond with a 400 Bad Request for payment errors
+//       }
+  
+//       // Handle other errors
+//       console.error(error.message); // Log the error message
+//       res.status(500).json({ message: 'Internal Server Error' });
+//     }
+//   });
   
 class PaymentError extends Error {
   constructor(message) {
@@ -14,38 +111,42 @@ class PaymentError extends Error {
   }
 }
 
-//Note,when a service have been posted,so to pay,you go to the db and check the payment price generated and if the money you inputed aint complete then it gets rejected 
-//create different cleaning space price based on the the type of cleaning generated eg deep,light,office,cleaning
+// Paystack configuration
+const paystackConfig = {
+  secretKey: 'sk_test_404411a98099866d1972d924fea7d3503e83b9d0', // Replace with your actual key
+};
+
+const paystackHeaders = {
+  Authorization: `Bearer ${paystackConfig.secretKey}`,
+  'Content-Type': 'application/json',
+};
+
+// Paystack payment endpoint
+const paystackPaymentURL = 'https://api.paystack.co/transaction/initialize';
+
+// Function to initiate Paystack payment
+const initiatePaystackPayment = async (email, amount) => {
+  const response = await axios.post(paystackPaymentURL, { email, amount }, { headers: paystackHeaders });
+  return response.data;
+};
 
 const paystackPayment = asyncHandler(async (req, res) => {
   try {
     const { email, amount } = req.body;
 
-    const response = await axios.post('https://api.paystack.co/transaction/initialize', {
-      email,
-      amount,
-    }, {
-      headers: {
-        Authorization: 'Bearer sk_test_404411a98099866d1972d924fea7d3503e83b9d0', // Replace with your actual key
-        'Content-Type': 'application/json',
-      },
-    });
+    // Call Paystack to initialize payment
+    const paymentResponse = await initiatePaystackPayment(email, amount);
 
-    const responseData = response.data;
-    console.log(responseData);
-
-    if (responseData.status && responseData.data) {
-      const authorizationURL = responseData.data.authorization_url;
-      const accessCode = responseData.data.access_code;
-      const reference = responseData.data.reference;
+    if (paymentResponse.status && paymentResponse.data) {
+      const { authorization_url, access_code, reference } = paymentResponse.data;
 
       res.json({
         status: true,
         message: 'Authorization URL created',
         data: {
-          authorization_url: authorizationURL,
-          access_code: accessCode,
-          reference: reference,
+          authorization_url,
+          access_code,
+          reference,
         },
       });
     } else {
@@ -57,26 +158,27 @@ const paystackPayment = asyncHandler(async (req, res) => {
   }
 });
 
-
-
-//
- 
-
-
 const createCleaningService = asyncHandler(async (req, res) => {
-    try {
-      const { id, serviceName, serviceCategory, areas, bookingDate, bookingTime, location  } = req.body;
-      const paymentStatus = 'pending'
-      // Check if the payment status is successful
-      if (paymentStatus !== 'pending') {
-        throw new PaymentError('Payment unsuccessful');
-      }
-  
-      const user = await User.findById(id);
-  
-      // Calculate the service rate based on the selected areas
-      const serviceRate = calculateServiceRate(areas);
-  
+  try {
+    const { id, serviceName, serviceCategory, areas, bookingDate, bookingTime, location } = req.body;
+    const paymentStatus = 'pending';
+
+    // Check if the payment status is successful
+    if (paymentStatus !== 'pending') {
+      throw new PaymentError('Payment unsuccessful');
+    }
+
+    const user = await User.findById(id);
+
+    // Calculate the service rate based on the selected areas
+    const serviceRate = calculateServiceRate(areas);
+
+    // Call Paystack to get the payment link
+    const paymentResponse = await initiatePaystackPayment(user.email, serviceRate * 100); // Convert to kobo
+
+    if (paymentResponse.status && paymentResponse.data) {
+      const { authorization_url, access_code, reference } = paymentResponse.data;
+
       // Create a new CleaningService instance
       const newCleaningService = new Service({
         user_id: user.id,
@@ -89,27 +191,43 @@ const createCleaningService = asyncHandler(async (req, res) => {
           bookingTime,
           location,
           paymentStatus,
+          payment: {
+            authorization_url,
+            access_code,
+            reference,
+          },
         },
         // other fields as needed
       });
-  
+
       // Save the new cleaning service to the database
       await newCleaningService.save();
-  
-      // Respond with a success message or the created cleaning service
-      res.status(201).json({ message: 'Cleaning service created and booked successfully', cleaningService: newCleaningService });
-    } catch (error) {
-      // Handle custom errors
-      if (error instanceof PaymentError) {
-        return res.status(400).json({ message: error.message }); // Respond with a 400 Bad Request for payment errors
-      }
-  
-      // Handle other errors
-      console.error(error.message); // Log the error message
-      res.status(500).json({ message: 'Internal Server Error' });
+
+      // Respond with the success message, cleaning service details, and payment information
+      res.status(201).json({
+        message: 'Cleaning service created and booked successfully',
+        cleaningService: newCleaningService,
+        payment: {
+          authorization_url,
+          access_code,
+          reference,
+        },
+      });
+    } else {
+      res.status(500).json({ error: 'Internal Server Error' });
     }
-  });
-  
+  } catch (error) {
+    // Handle custom errors
+    if (error instanceof PaymentError) {
+      return res.status(400).json({ message: error.message }); // Respond with a 400 Bad Request for payment errors
+    }
+
+    // Handle other errors
+    console.error(error.message); // Log the error message
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 
 
   //Get all User's Service
