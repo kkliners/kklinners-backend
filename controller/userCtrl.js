@@ -1,4 +1,5 @@
 const User = require('../model/user');
+const Pin = require('../model/Pin');
 const asyncHandler = require('express-async-handler');
 const {token }= require('../config/jwt')
 const {validateMongoDbId} = require('../utils/validateMongodbId');
@@ -251,6 +252,43 @@ const getAllUser= asyncHandler(async(req,res)=>{
 })
 
 
+const createVerificationPin = asyncHandler(async (req, res) => {
+  const { user_id,  pin } = req.body;
+
+  try {
+    // Assuming you have a User model defined
+    const user = await User.findOne({ _id: user_id });
+console.log(pin)
+    if (!user) {
+      return res.status(403).json('User does not exist');
+    }
+
+    // Check if a pin already exists for the user
+    let existingPin = await Pin.findOne({ user_id: user._id });
+
+    if (existingPin) {
+      // If a pin exists, update the existing pin
+      existingPin.pin = pin;
+    } else {
+      // If no pin exists, create a new pin document
+      existingPin = new Pin({
+        user_id: user._id,
+        pin: pin,
+      });
+    };
+
+    // Save the pin to the database
+    await existingPin.save();
+
+    res.status(200).json({ message: 'Pin created/updated successfully' });
+  } catch (error) {
+    console.error('Error saving pin:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+
 //Get Single User In DataBase
 const getUser= asyncHandler(async(req,res)=>{
     const {id} = req.params;
@@ -470,4 +508,4 @@ const forgotPasswordToken = asyncHandler(async (req, res) => {
 //      await sendEmail(emailData, req, res);//pass the data to email create
 //      res.json(token);
 
-module.exports = {registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,veriffyPin ,verifyEmail}
+module.exports = {registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,veriffyPin ,verifyEmail,createVerificationPin}

@@ -1,53 +1,47 @@
-const BookedService = require('./bookedService'); // Import the "booked
+const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+
+// Import the User model
+const User = require('../model/user'); // Adjust the path accordingly
+
+// Function to generate a random 4-digit PIN
+function generateRandomPIN() {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
+// Connect to MongoDB
 
 
-// Create a new booked service
-//PAYLOAD
-// {
-//     "user": "userObjectId", // Replace with the actual user ObjectId
-//     "service": "serviceObjectId", // Replace with the actual service ObjectId
-//     "bookingDate": "2023-09-28T12:00:00Z",
-//     "duration": 120, // Duration in minutes or hours
-//     "location": "123 Main Street, City",
-//     "price": 50.0,
-//     "paymentStatus": "paid" // Payment status (e.g., 'paid', 'pending', 'failed')
-//   }
-app.post('/booked-services', async (req, res) => {
-    try {
-      const { user, service, bookingDate, duration, location, price, paymentStatus } = req.body;
-  
-      // Create a new booked service document
-      const newBookedService = new BookedService({
-        user,
-        service,
-        bookingDate,
-        duration,
-        location,
-        price,
-        paymentStatus,
-      });
-  
-      // Save the booked service to the database
-      const savedBookedService = await newBookedService.save();
-  
-      res.status(201).json(savedBookedService);
-    } catch (error) {
-      res.status(500).json({ error: 'Internal server error' });
+// Add PIN to all existing users
+async function addPinToUsers() {
+  try {
+    // Find all existing users
+    const users = await User.find({});
+
+    // Iterate through each user and add a PIN
+    for (const user of users) {
+      // Check if user already has a PIN
+      if (!user.pin) {
+        // If no PIN exists, generate a random PIN and assign it to the user
+        const pin = generateRandomPIN();
+        user.pin = pin;
+
+        // Save the user with the new PIN
+        await user.save();
+
+        console.log(`PIN added to user ${user.username}: ${pin}`);
+      }
     }
-  });
 
+    console.log('Script completed successfully');
+  } catch (error) {
+    console.error('Error:', error);
+  } finally {
+    // Disconnect from MongoDB
+    mongoose.disconnect();
+  }
+}
 
-
-  app.get('/user-booked-services/:userId', async (req, res) => {
-    try {
-      const userId = req.params.userId;
-  
-      // Find all booked services where the user field matches the userId
-      const userBookedServices = await BookedService.find({ user: userId });
-  
-      res.status(200).json(userBookedServices);
-    } catch (error) {
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  });
-   
+// Run the script
+addPinToUsers();

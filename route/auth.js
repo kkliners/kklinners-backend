@@ -9,5 +9,5 @@ route.post('/login', loginUser)
 route.post('/signup', filldata)
 route.post('/send-password-change-pin', forgotPasswordToken);
 route.post('/verifypin', veriffyPin)//password pin verification
-route.put('/reset-password', changePassword);
+route.put('/reset-password', changePassword);//password change
 module.exports = route;
