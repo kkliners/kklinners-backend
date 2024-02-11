@@ -251,7 +251,7 @@ const getAllUser= asyncHandler(async(req,res)=>{
     }
 })
 
-
+//Create Verification pin
 const createVerificationPin = asyncHandler(async (req, res) => {
   const { user_id,  pin } = req.body;
 
@@ -287,6 +287,36 @@ console.log(pin)
   }
 });
 
+// Create a function to handle PIN verification
+const verifyPin = asyncHandler(async (req, res) => {
+  const { user_id, pin } = req.body;
+
+  try {
+    // Find the user with the provided user_id
+    const user = await User.findOne({ _id: user_id });
+
+    if (!user) {
+      return res.status(403).json('User does not exist');
+    }
+
+    // Find the PIN for the user
+    const storedPin = await Pin.findOne({ user_id: user._id });
+
+    if (!storedPin) {
+      return res.status(404).json('PIN not found for the user');
+    }
+
+    // Compare the provided PIN with the stored PIN
+    if (pin === storedPin.pin) {
+      return res.status(200).json('PIN verified successfully');
+    } else {
+      return res.status(403).json('Incorrect PIN');
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 
 //Get Single User In DataBase
@@ -398,7 +428,7 @@ const unBlockUser= asyncHandler(async(req,res)=>{
     }
 })
 
-const veriffyPin = asyncHandler(async(req,res)=>{
+const passPinVerification = asyncHandler(async(req,res)=>{
   const { email, pin } = req.body;
 
   // Validate request parameters
@@ -496,16 +526,5 @@ const forgotPasswordToken = asyncHandler(async (req, res) => {
   }
 });
 
-// const otp = await user.createVerificationToken();
-//      await user.save(); 
-//      const resetUrl = `Use this ${token} to verify your email`;
-//      const emailData = {
-//         to: email,
-//         subject: 'verify Email',
-//         text: 'hey user',
-//         htm: resetUrl,
-//      };
-//      await sendEmail(emailData, req, res);//pass the data to email create
-//      res.json(token);
 
-module.exports = {registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,veriffyPin ,verifyEmail,createVerificationPin}
+module.exports = {registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,passPinVerification ,verifyEmail,createVerificationPin,verifyPin}
