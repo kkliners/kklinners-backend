@@ -470,8 +470,16 @@ const passPinVerification = asyncHandler(async(req,res)=>{
 const changePassword = asyncHandler(async (req, res) => {
   try {
     // Assuming you want to get the new password and email from the request body
-    const { password, email } = req.body;
+    const { email, password, confirmPassword } = req.body;
 
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Passwords do not match',
+      });
+    }
+
+    delete req.body.confirmPassword;
     // Find the user in the database based on the email
     const user = await User.findOne({ email });
 
