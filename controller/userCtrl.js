@@ -308,7 +308,7 @@ const verifyPin = asyncHandler(async (req, res) => {
 
     // Compare the provided PIN with the stored PIN
     if (pin === storedPin.pin) {
-      return res.status(200).json('PIN verified successfully');
+      return res.status(200).json({success:'True',message:'PIN verified successfully'});
     } else {
       return res.status(403).json('Incorrect PIN');
     }
@@ -492,9 +492,9 @@ const changePassword = asyncHandler(async (req, res) => {
     if (password) {
       user.password = password;
       const updatedUser = await user.save();
-      res.json(updatedUser);
+      res.json({success:'True',message:'password changed',updatedUser});
     } else {
-      res.status(400).json({ message: 'Password not provided' });
+      res.status(400).json({success:'Failed', message: 'Password not provided' });
     }
   } catch (error) {
     console.error(error);
