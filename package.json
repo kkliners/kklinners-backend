@@ -4,7 +4,7 @@
   "description": "cleaning api",
   "main": "app.js",
   "scripts": {
-    "start": "nodemon app.js"
+    "start": "npm start"
   },
   "repository": {
     "type": "git",
