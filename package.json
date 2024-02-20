@@ -2,7 +2,7 @@
   "name": "cleaning-service-api",
   "version": "1.0.0",
   "description": "cleaning api",
-  "main": "app.js",
+  
   "scripts": {
     "start": "nodemon app.js"
   },
