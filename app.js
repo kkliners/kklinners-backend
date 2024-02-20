@@ -8,7 +8,7 @@ const serviceRoute = require('./route/book');
 const cors = require('cors')
 const {notFound,errorHandler} = require('./middleware/errorHandler')
 const app = express();
-const port =  9000;
+const port =  9000 || process.env.PORT ;
 dbConnect();
 
 // Middleware
