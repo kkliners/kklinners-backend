@@ -42,9 +42,8 @@ const registerUser = asyncHandler(async (req, res) => {
         to: email,
         subject: 'Verify Email',
         text: `Use this ${otp} to verify your email`,
-        html: `<p>${resetUrl}</p>`, // Wrap the resetUrl in HTML tags
+        html: resetUrl,
       };
-
       await sendEmail(emailData, req, res);
 
       res.status(201).json({
@@ -68,7 +67,6 @@ const registerUser = asyncHandler(async (req, res) => {
     });
   }
 });
-
 
 
 
