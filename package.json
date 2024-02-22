@@ -2,7 +2,6 @@
   "name": "cleaning-service-api",
   "version": "1.0.0",
   "description": "cleaning api",
-  
   "scripts": {
     "start": "node app.js"
   },
@@ -37,7 +36,6 @@
     "paystack": "^2.0.1"
   },
   "devDependencies": {
-    
     "nodemon": "^3.0.3"
   }
 }
