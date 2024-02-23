@@ -22,7 +22,7 @@ sendEmail = asyncHandler(async(data,req,res)=>{
           to: data.to, // list of receivers
           subject: data.subject, // Subject line
           text: data.text, // plain text body
-          html: data.htm, // html body
+          html: data.html, // Fix the typo here // html body
         });
     
         // Handle any further logic here...

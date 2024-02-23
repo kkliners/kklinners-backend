@@ -174,10 +174,10 @@ const loginUser = asyncHandler(async (req, res) => {
 // filldata user after login and register
 const filldata = asyncHandler(async (req, res) => {
   try {
-    const userId = req.body;
-    validateMongoDbId(userId);
+    const {id} = req.body;
+    validateMongoDbId(id);
 
-    const user = await User.findById(userId);
+    const user = await User.findById(id);
 
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
