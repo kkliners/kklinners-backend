@@ -213,7 +213,7 @@ const filldata = asyncHandler(async (req, res) => {
     user.lastName = lastName;
     user.phone = mobile;
     user.address = address;
-    user.token = generatedToken
+    user.token = generatedToken;
     user.profileImage = {
       public_id: img.public_id,
       url: img.secure_url,
@@ -223,9 +223,7 @@ const filldata = asyncHandler(async (req, res) => {
       user.userData = [];
     }
 
-
     // Save the user with the new token
-    user.token = generatedToken;
     await user.save();
 
     // Include the generated token in the response
@@ -241,9 +239,8 @@ const filldata = asyncHandler(async (req, res) => {
           mobile: user.phone,
           address: user.address,
           profileImage: user.profileImage,
-          token: user.generatedToken,
+          token: user.token, // Corrected from user.generatedToken
         },
-        
       },
     });
   } catch (error) {
