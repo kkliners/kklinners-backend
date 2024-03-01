@@ -158,8 +158,7 @@ const loginUser = asyncHandler(async (req, res) => {
         },
       });
     } else {
-      return new Error('Incorrect email or password. Please double-check your login details and try again.');
-
+      throw new Error('Login details incorrect');
     }
   } catch (error) {
     console.error(error);
