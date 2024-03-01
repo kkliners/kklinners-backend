@@ -174,7 +174,7 @@ const loginUser = asyncHandler(async (req, res) => {
 // filldata user after login and register
 const filldata = asyncHandler(async (req, res) => {
   try {
-    const {id} = req.body;
+    const { id } = req.body;
     validateMongoDbId(id);
 
     const user = await User.findById(id);
@@ -195,7 +195,7 @@ const filldata = asyncHandler(async (req, res) => {
     const img = await cloudinary.uploader.upload(profileImage, {
       folder: 'profileImage',
     });
-    console.log(img)
+
     // Check for existing username
     const usernameExists = await User.findOne({ username });
     if (usernameExists && usernameExists._id.toString() !== userId) {
@@ -211,24 +211,38 @@ const filldata = asyncHandler(async (req, res) => {
     user.lastName = lastName;
     user.phone = mobile;
     user.address = address;
-    user.profileImage = { // Assign object properties directly
+    user.profileImage = {
       public_id: img.public_id,
       url: img.secure_url,
     };
 
-    // Reconsider the purpose of 'userData' array
-    // If it's not essential, remove this section
     if (!user.userData) {
       user.userData = [];
     }
-    // user.userData.push({ ... }); // Potentially unnecessary
 
+    // Generate a new JWT token
+    const generatedToken = token(user._id);
+
+    // Save the user with the new token
+    user.token = generatedToken;
     await user.save();
 
+    // Include the generated token in the response
     res.status(200).json({
       success: true,
       message: 'User updated successfully',
-      data: user,
+      data: {
+        user: {
+          _id: user._id,
+          username: user.username,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          mobile: user.phone,
+          address: user.address,
+          profileImage: user.profileImage,
+        },
+        token: generatedToken,
+      },
     });
   } catch (error) {
     console.error(error);
@@ -239,6 +253,7 @@ const filldata = asyncHandler(async (req, res) => {
     });
   }
 });
+
 
 //Get All User In DataBase
 const getAllUser= asyncHandler(async(req,res)=>{
