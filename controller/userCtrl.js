@@ -213,6 +213,7 @@ const filldata = asyncHandler(async (req, res) => {
     user.lastName = lastName;
     user.phone = mobile;
     user.address = address;
+    user.token = generatedToken
     user.profileImage = {
       public_id: img.public_id,
       url: img.secure_url,
@@ -240,7 +241,7 @@ const filldata = asyncHandler(async (req, res) => {
           mobile: user.phone,
           address: user.address,
           profileImage: user.profileImage,
-          token: generatedToken,
+          token: user.generatedToken,
         },
         
       },
