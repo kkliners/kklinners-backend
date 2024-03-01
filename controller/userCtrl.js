@@ -240,8 +240,9 @@ const filldata = asyncHandler(async (req, res) => {
           mobile: user.phone,
           address: user.address,
           profileImage: user.profileImage,
+          token: generatedToken,
         },
-        token: generatedToken,
+        
       },
     });
   } catch (error) {
