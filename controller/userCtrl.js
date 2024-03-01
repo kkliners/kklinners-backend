@@ -195,8 +195,6 @@ const filldata = asyncHandler(async (req, res) => {
     const img = await cloudinary.uploader.upload(profileImage, {
       folder: 'profileImage',
     });
-    // Generate a new JWT token
-    const generatedToken = token(user._id);
 
     // Check for existing username
     const usernameExists = await User.findOne({ username });
@@ -213,7 +211,6 @@ const filldata = asyncHandler(async (req, res) => {
     user.lastName = lastName;
     user.phone = mobile;
     user.address = address;
-    user.token = generatedToken;
     user.profileImage = {
       public_id: img.public_id,
       url: img.secure_url,
@@ -223,7 +220,11 @@ const filldata = asyncHandler(async (req, res) => {
       user.userData = [];
     }
 
+    // Generate a new JWT token
+    const generatedToken = token(user._id);
+
     // Save the user with the new token
+    user.token = generatedToken;
     await user.save();
 
     // Include the generated token in the response
@@ -239,8 +240,9 @@ const filldata = asyncHandler(async (req, res) => {
           mobile: user.phone,
           address: user.address,
           profileImage: user.profileImage,
-          token: user.token, // Corrected from user.generatedToken
+          token: generatedToken,
         },
+        
       },
     });
   } catch (error) {
