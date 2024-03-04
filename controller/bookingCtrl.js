@@ -130,7 +130,7 @@ const initiatePaystackPayment = async (email, amount) => {
   return response.data;
 };
 
-const paystackPayment = asyncHandler(async (req, res) => {
+const paystackPayment = asyncHandler(async (req, res, next) => {
   try {
     const { email, amount } = req.body;
 
@@ -140,8 +140,8 @@ const paystackPayment = asyncHandler(async (req, res) => {
     if (paymentResponse.status && paymentResponse.data) {
       const { authorization_url, access_code, reference } = paymentResponse.data;
 
-      res.json({
-        status: true,
+      res.status(200).json({
+        success: true,
         message: 'Authorization URL created',
         data: {
           authorization_url,
@@ -150,15 +150,17 @@ const paystackPayment = asyncHandler(async (req, res) => {
         },
       });
     } else {
-      res.status(500).json({ error: 'Internal Server Error' });
+      next(new CustomError('Internal Server Error', 500));
     }
   } catch (error) {
     console.error('Error processing Paystack payment:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    console.error(error.message); // Log the error message
+    next(error);
   }
 });
 
-const createCleaningService = asyncHandler(async (req, res) => {
+
+const createCleaningService = asyncHandler(async (req, res, next) => {
   try {
     const { id, serviceName, serviceCategory, areas, bookingDate, bookingTime, location } = req.body;
     const paymentStatus = 'pending';
@@ -205,78 +207,82 @@ const createCleaningService = asyncHandler(async (req, res) => {
 
       // Respond with the success message, cleaning service details, and payment information
       res.status(201).json({
+        success: true,
         message: 'Cleaning service created and booked successfully',
-        cleaningService: newCleaningService,
-        payment: {
-          authorization_url,
-          access_code,
-          reference,
+        data: {
+          cleaningService: newCleaningService,
+          payment: {
+            authorization_url,
+            access_code,
+            reference,
+          },
         },
       });
     } else {
-      res.status(500).json({ error: 'Internal Server Error' });
+      next(new CustomError('Internal Server Error', 500));
     }
   } catch (error) {
     // Handle custom errors
     if (error instanceof PaymentError) {
-      return res.status(400).json({ message: error.message }); // Respond with a 400 Bad Request for payment errors
+      return res.status(400).json({ success: false, message: error.message }); // Respond with a 400 Bad Request for payment errors
     }
 
     // Handle other errors
     console.error(error.message); // Log the error message
-    res.status(500).json({ message: 'Internal Server Error' });
+    next(error);
   }
 });
 
 
 
-  //Get all User's Service
-const getUserServices = asyncHandler(async (req, res) => {
-    const user_id = req.params.user_id;
-  
-    try {
-      // Fetch services for the given user_id
-      const userServices = await Service.find({ user_id: user_id });
-  
-      if (userServices.length === 0) {
-        return res.status(404).json({ message: 'No services found for the user' });
-      }
-  
-      // Respond with the user's services
-      res.status(200).json({ userServices });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ message: 'Internal Server Error' });
+ // Get all User's Service
+const getUserServices = asyncHandler(async (req, res, next) => {
+  const user_id = req.params.user_id;
+
+  try {
+    // Fetch services for the given user_id
+    const userServices = await Service.find({ user_id: user_id });
+
+    if (userServices.length === 0) {
+      next(new CustomError('No services found for the user', 404));
     }
-  });
+
+    // Respond with the user's services
+    res.status(200).json({ success: true,message: 'All user Services', data: { userServices } });
+  } catch (error) {
+    console.error(error.message); // Log the error message
+    next(error);
+  }
+});
+
 
 
 
 //Get a Single Service
 
-  const getSingleService = asyncHandler(async (req, res) => {
-    const userId = req.params.userId; // Assuming userId is passed as a parameter
-    const serviceId = req.params.serviceId;
+const getSingleService = asyncHandler(async (req, res, next) => {
+  const userId = req.params.userId; // Assuming userId is passed as a parameter
+  const serviceId = req.params.serviceId;
 
-    try {
-        // Fetch the service for the given userId and serviceId
-        const service = await Service.findOne({ user_id: userId, _id: serviceId });
+  try {
+    // Fetch the service for the given userId and serviceId
+    const service = await Service.findOne({ user_id: userId, _id: serviceId });
 
-        if (!service) {
-            return res.status(404).json({ message: 'Service not found' });
-        }
-
-        // Respond with the single service
-        res.status(200).json({ service });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Internal Server Error' });
+    if (!service) {
+      next(new CustomError('Service not found', 404));
     }
+
+    // Respond with the single service
+    res.status(200).json({ success: true,message: 'User Service', data: { service } });
+  } catch (error) {
+    console.error(error.message); // Log the error message
+    next(error);
+  }
 });
 
 
 //User cancelled Service services
-const cancelService = asyncHandler(async (req, res) => {
+const cancelService = asyncHandler(async (req, res, next) => {
   const serviceId = req.params.serviceId;
   const { cancellationReason } = req.body;
 
@@ -286,12 +292,12 @@ const cancelService = asyncHandler(async (req, res) => {
 
     // Check if the service exists
     if (!service) {
-      return res.status(404).json({ message: 'Cleaning service not found' });
+      next(new CustomError('Cleaning service not found', 404));
     }
 
     // Check if the service is cancellable (e.g., payment status is pending)
     if (service.booking.paymentStatus !== 'pending') {
-      return res.status(400).json({ message: 'Cannot cancel a completed or ongoing service' });
+      next(new CustomError('Cannot cancel a completed or ongoing service', 400));
     }
 
     // Update the service with the cancellation reason and set the cancellation status
@@ -302,15 +308,15 @@ const cancelService = asyncHandler(async (req, res) => {
     await service.save();
 
     // Respond with a success message or the updated cleaning service
-    res.status(200).json({ message: 'Cleaning service canceled successfully', cleaningService: service });
+    res.status(200).json({ success: true, message: 'Cleaning service canceled successfully', data: { cleaningService: service } });
   } catch (error) {
-    console.error(error.message);
-    res.status(500).json({ message: 'Internal Server Error' });
+    console.error(error.message); // Log the error message
+    next(error);
   }
 });
 
 //Get a specific User Canceled Services
-const userCancelledServices = asyncHandler(async(req,res)=>{
+const userCancelledServices = asyncHandler(async (req, res, next) => {
   const userId = req.params.userId;
 
   try {
@@ -321,62 +327,64 @@ const userCancelledServices = asyncHandler(async(req,res)=>{
     });
 
     // Respond with the list of canceled services
-    res.status(200).json({ cancelledServices });
+    res.status(200).json({ success: true, message: 'Cancelled services retrieved successfully', data: { cancelledServices } });
   } catch (error) {
     console.error(error.message);
-    res.status(500).json({ message: 'Internal Server Error' });
+    next(error);
   }
-})
+});
 // Export the route handler
 
 
 // Get all upcoming services
-const getAllUpcomingServices = asyncHandler(async (req, res) => {
+const getAllUpcomingServices = asyncHandler(async (req, res, next) => {
   try {
     const currentDate = new Date();
 
     // Find all services with booking dates in the future
     const upcomingServices = await Service.find({
       'booking.bookingDate': { $gte: currentDate },
-      'booking.progress': { $ne: ['cancel','completed'] }, // Exclude canceled services
+      'booking.progress': { $nin: ['cancel', 'completed'] }, // Exclude canceled and completed services
     });
 
     // Respond with the list of upcoming services
-    res.status(200).json({ upcomingServices });
+    res.status(200).json({ success: true, message: 'Upcoming services retrieved successfully', data: { upcomingServices } });
   } catch (error) {
     console.error(error.message);
-    res.status(500).json({ message: 'Internal Server Error' });
+    next(error);
   }
 });
 
 
+
 // Get all completed services
-const getAllCompletedServices = asyncHandler(async (req, res) => {
+const getAllCompletedServices = asyncHandler(async (req, res, next) => {
   try {
     // Find all services with progress 'completed'
     const completedServices = await Service.find({ 'booking.progress': 'completed' });
 
     // Respond with the list of completed services
-    res.status(200).json({ completedServices });
+    res.status(200).json({ success: true, message: 'Completed services retrieved successfully', data: { completedServices } });
   } catch (error) {
+    
     console.error(error.message);
-    res.status(500).json({ message: 'Internal Server Error' });
+    next(error);
   }
 });
 
 
 
 // Get all pending services
-const getAllPendingServices = asyncHandler(async (req, res) => {
+const getAllPendingServices = asyncHandler(async (req, res, next) => {
   try {
     // Find all services with payment status 'pending'
     const pendingServices = await Service.find({ 'booking.paymentStatus': 'pending' });
 
     // Respond with the list of pending services
-    res.status(200).json({ pendingServices });
+    res.status(200).json({ success: true, message: 'Pending services retrieved successfully', data: { pendingServices } });
   } catch (error) {
     console.error(error.message);
-    res.status(500).json({ message: 'Internal Server Error' });
+    next(error);
   }
 });
 
@@ -384,7 +392,7 @@ const getAllPendingServices = asyncHandler(async (req, res) => {
 
 
 // Controller function to get all pending services for a specific user
-const getUserPendingServices = asyncHandler(async (req, res) => {
+const getUserPendingServices = asyncHandler(async (req, res, next) => {
   const userId = req.params.userId;
 
   try {
@@ -393,15 +401,16 @@ const getUserPendingServices = asyncHandler(async (req, res) => {
       'booking.progress': 'pending',
     });
 
-    res.status(200).json({ userPendingServices });
+    res.status(200).json({ success: true, message: 'User pending services retrieved successfully', data: { userPendingServices } });
   } catch (error) {
     console.error(error.message);
-    res.status(500).json({ message: 'Internal Server Error' });
+    next(error);
   }
 });
 
+
 // Controller function to get all upcoming services for a specific user
-const getUserUpcomingServices = asyncHandler(async (req, res) => {
+const getUserUpcomingServices = asyncHandler(async (req, res, next) => {
   const userId = req.params.userId;
 
   try {
@@ -412,15 +421,15 @@ const getUserUpcomingServices = asyncHandler(async (req, res) => {
       'booking.progress': { $nin: ['cancel', 'completed'] },
     });
 
-    res.status(200).json({ userUpcomingServices });
+    res.status(200).json({ success: true, message: 'User upcoming services retrieved successfully', data: { userUpcomingServices } });
   } catch (error) {
     console.error(error.message);
-    res.status(500).json({ message: 'Internal Server Error' });
+    next(error);
   }
 });
 
 // Controller function to get all completed services for a specific user
-const getUserCompletedServices = asyncHandler(async (req, res) => {
+const getUserCompletedServices = asyncHandler(async (req, res, next) => {
   const userId = req.params.userId;
 
   try {
@@ -428,16 +437,16 @@ const getUserCompletedServices = asyncHandler(async (req, res) => {
       'user_id': userId,
       'booking.progress': 'completed',
     });
+    
     if (userCompletedServices.length === 0) {
-      return res.status(404).json({ message: 'No completed services found for the user.' });
+      return res.status(404).json({ success: false, message: 'No completed services found for the user.' });
     }
 
-    
-    res.status(200).json({ userCompletedServices });
+    res.status(200).json({ success: true, message: 'User completed services retrieved successfully', data: { userCompletedServices } });
   } catch (error) {
     console.error(error.message);
-    res.status(500).json({ message: 'Internal Server Error' });
+    next(new CustomError('Internal Server Error', 500));
   }
-});         
+});
 
 module.exports = { createCleaningService,getUserServices ,getSingleService,paystackPayment,cancelService,userCancelledServices,getAllCompletedServices,getAllUpcomingServices,getAllPendingServices,getUserCompletedServices,getUserUpcomingServices,getUserPendingServices};
