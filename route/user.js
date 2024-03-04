@@ -14,4 +14,5 @@ route.put('/unblock-user/:id',isAdmin,authMiddleware,unBlockUser)
 route.post('/create-pin',isAdmin,authMiddleware,createVerificationPin)
 route.get('/services/:user_id',authMiddleware,getUserServices)
 route.post('/verify-pin',isAdmin,authMiddleware,verifyPin)
+
 module.exports = route;

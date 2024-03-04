@@ -6,14 +6,15 @@ const notFound = (req, res, next) => {
     next(error);
   };
 
-const errorHandler = (err, req, res, next) => {
-    const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  const errorHandler = (err, req, res, next) => {
+    const statusCode = err.statusCode || 500;
     res.status(statusCode).json({
-      message: err?.message || 'Internal Server Error',
-      error: err?.stack || 'No stack trace available',
+      success: false,
+      error: err.message || 'Internal Server Error',
+      details: err.details || null,
     });
   };
-
+  
 module.exports = {
     notFound,errorHandler
 }

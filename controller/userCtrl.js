@@ -13,15 +13,13 @@ function generateOTP() {
 }
 
 //SignUP USer And send email
-const registerUser = asyncHandler(async (req, res) => {
+const registerUser = asyncHandler(async (req, res, next) => {
   try {
     const { email, password, confirmPassword } = req.body;
 
     if (password !== confirmPassword) {
-      return res.status(400).json({
-        success: false,
-        error: 'Passwords do not match',
-      });
+      // Change: Use a custom error class for better organization
+      throw new CustomError('Passwords do not match', 400);
     }
 
     delete req.body.confirmPassword;
@@ -52,53 +50,37 @@ const registerUser = asyncHandler(async (req, res) => {
         data: newUser,
       });
     } else {
-      res.status(400).json({
-        success: false,
-        error: 'User already exists',
-      });
+      // Change: Use a custom error class for better organization
+      throw new CustomError('User already exists', 400);
     }
   } catch (error) {
     console.error(error);
-
-    res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      details: error.message || error,
-    });
+    next(error); // Use next to pass the error to the error handling middleware
   }
 });
 
 
 
-const verifyEmail = asyncHandler(async (req, res) => {
+const verifyEmail = asyncHandler(async (req, res, next) => {
   const { email, otp } = req.body;
 
   try {
     // Find the user by email
     const user = await User.findOne({ email });
 
-    // If the user doesn't exist, return an error
+    // If the user doesn't exist, return a custom error
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: 'User not found',
-      });
+      throw new CustomError('User not found', 404);
     }
 
     // Check if the provided OTP matches the stored OTP
     if (user.otp !== otp) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid OTP',
-      });
+      throw new CustomError('Invalid OTP', 400);
     }
 
     // Check if the OTP is still valid (not expired)
     if (user.otp.expiresAt && user.otp.expiresAt < new Date()) {
-      return res.status(400).json({
-        success: false,
-        error: 'Expired OTP',
-      });
+      throw new CustomError('Expired OTP', 400);
     }
 
     // Mark the email as verified
@@ -118,19 +100,13 @@ const verifyEmail = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-
-    res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      details: error.message || error,
-    });
+    next(error); // Use next to pass the error to the error handling middleware
   }
 });
 
 
-
 // Login User
-const loginUser = asyncHandler(async (req, res) => {
+const loginUser = asyncHandler(async (req, res, next) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
@@ -158,38 +134,36 @@ const loginUser = asyncHandler(async (req, res) => {
         },
       });
     } else {
-      throw new Error('Login details incorrect');
+      // Provide a more specific error message for login credential issues
+      throw new Error('Incorrect email or password');
     }
   } catch (error) {
     console.error(error);
-
-    res.status(500).json({
+    res.status(401).json({
       success: false,
-      error: 'Internal Server Error',
-      details: error.message || error,
+      error: 'Unauthorized',
+      message: 'Incorrect email or password',
     });
   }
 });
 
-// filldata user after login and register
-const filldata = asyncHandler(async (req, res) => {
+const filldata = asyncHandler(async (req, res, next) => {
   try {
     const { id } = req.body;
     validateMongoDbId(id);
 
     const user = await User.findById(id);
 
+    // Change: Use a custom error class for better organization
     if (!user) {
-      return res.status(404).json({ success: false, error: 'User not found' });
+      throw new CustomError('User not found', 404);
     }
 
     // Validate required fields
     const { username, firstName, lastName, mobile, address, profileImage } = req.body;
     if (!username || !firstName || !lastName || !mobile || !address) {
-      return res.status(400).json({
-        success: false,
-        error: 'All fields (username, firstName, lastName, mobile, address) are required',
-      });
+      // Change: Use a custom error class for better organization
+      throw new CustomError('All fields are required', 400);
     }
 
     const img = await cloudinary.uploader.upload(profileImage, {
@@ -199,10 +173,8 @@ const filldata = asyncHandler(async (req, res) => {
     // Check for existing username
     const usernameExists = await User.findOne({ username });
     if (usernameExists && usernameExists._id.toString() !== userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Username already exists',
-      });
+      // Change: Use a custom error class for better organization
+      throw new CustomError('Username already exists', 400);
     }
 
     // Update user properties
@@ -234,6 +206,7 @@ const filldata = asyncHandler(async (req, res) => {
       data: {
         user: {
           _id: user._id,
+          email:user.email,
           username: user.username,
           firstName: user.firstName,
           lastName: user.lastName,
@@ -242,41 +215,45 @@ const filldata = asyncHandler(async (req, res) => {
           profileImage: user.profileImage,
           token: generatedToken,
         },
-        
       },
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      details: error.message || error,
-    });
+    next(error); // Use next to pass the error to the error handling middleware
   }
 });
 
 
 //Get All User In DataBase
-const getAllUser= asyncHandler(async(req,res)=>{
-    
-    try {
-        const users = await User.find();
-        res.status(200).json(users) 
-    } catch (error) {
-        throw new Error("Users Not Found")
+// Get All User In DataBase
+const getAllUser = asyncHandler(async (req, res, next) => {
+  try {
+    const users = await User.find();
+
+    if (!users || users.length === 0) {
+      // Change: Use a custom error class for better organization
+      throw new CustomError('Users not found', 404);
     }
-})
+
+    res.status(200).json(users);
+  } catch (error) {
+    console.error(error);
+    next(error); // Use next to pass the error to the error handling middleware
+  }
+});
+
 
 //Create Verification pin
-const createVerificationPin = asyncHandler(async (req, res) => {
-  const { user_id,  pin } = req.body;
+const createVerificationPin = asyncHandler(async (req, res, next) => {
+  const { user_id, pin } = req.body;
 
   try {
     // Assuming you have a User model defined
     const user = await User.findOne({ _id: user_id });
-console.log(pin)
+
     if (!user) {
-      return res.status(403).json('User does not exist');
+      // Change: Use a custom error class for better organization
+      throw new CustomError('User does not exist', 403);
     }
 
     // Check if a pin already exists for the user
@@ -291,7 +268,7 @@ console.log(pin)
         user_id: user._id,
         pin: pin,
       });
-    };
+    }
 
     // Save the pin to the database
     await existingPin.save();
@@ -299,12 +276,12 @@ console.log(pin)
     res.status(200).json({ message: 'Pin created/updated successfully' });
   } catch (error) {
     console.error('Error saving pin:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    next(error); // Use next to pass the error to the error handling middleware
   }
 });
 
 // Create a function to handle PIN verification
-const verifyPin = asyncHandler(async (req, res) => {
+const verifyPin = asyncHandler(async (req, res, next) => {
   const { user_id, pin } = req.body;
 
   try {
@@ -312,137 +289,164 @@ const verifyPin = asyncHandler(async (req, res) => {
     const user = await User.findOne({ _id: user_id });
 
     if (!user) {
-      return res.status(403).json('User does not exist');
+      // Change: Use a custom error class for better organization
+      throw new CustomError('User does not exist', 403);
     }
 
     // Find the PIN for the user
     const storedPin = await Pin.findOne({ user_id: user._id });
 
     if (!storedPin) {
-      return res.status(404).json('PIN not found for the user');
+      // Change: Use a custom error class for better organization
+      throw new CustomError('PIN not found for the user', 404);
     }
 
     // Compare the provided PIN with the stored PIN
     if (pin === storedPin.pin) {
-      return res.status(200).json({success:'True',message:'PIN verified successfully'});
+      return res.status(200).json({ success: true, message: 'PIN verified successfully' });
     } else {
-      return res.status(403).json('Incorrect PIN');
+      // Change: Use a custom error class for better organization
+      throw new CustomError('Incorrect PIN', 403);
     }
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    next(error); // Use next to pass the error to the error handling middleware
+  }
+});
+
+//Get Single User In DataBase
+const getUser = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  try {
+    validateMongoDbId(id);
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      // Change: Use a custom error class for better organization
+      throw new CustomError('User not found', 404);
+    }
+
+    res.status(200).json(user);
+  } catch (error) {
+    console.error(error);
+    next(error); // Use next to pass the error to the error handling middleware
   }
 });
 
 
-//Get Single User In DataBase
-const getUser= asyncHandler(async(req,res)=>{
-    const {id} = req.params;
-    
-    try {
-        validateMongoDbId(id)
-        const user = await User.findById(id);
-        res.status(200).json(user) 
-    } catch (error) {
-        throw new Error(error)
-    }
-})
-
-
 //Delete User
-const deleteUser= asyncHandler(async(req,res)=>{
-    const {id} = req.params;
-    validateMongoDbId(id)
-    try {
-        const userDeleted = await User.findByIdAndDelete(id);
+const deleteUser = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  validateMongoDbId(id);
+
+  try {
+    const userDeleted = await User.findByIdAndDelete(id);
 
     if (!userDeleted) {
-      return res.status(404).json({status:false, message: `User with ID ${id} not found` });
+      // Change: Use a custom error class for better organization
+      throw new CustomError(`User with ID ${id} not found`, 404);
     }
 
     console.log(`User with ID ${id} deleted`);
-    res.json({status:true,
-    message: "User Deleted"});
-    } catch (error) {
-        throw new Error(error)
-    }
-})
+    res.json({
+      status: true,
+      message: "User Deleted"
+    });
+  } catch (error) {
+    console.error(error);
+    next(error); // Use next to pass the error to the error handling middleware
+  }
+});
+
 
 
 //update User
-const updateUser= asyncHandler(async(req,res)=>{
-    const {id} = req.user;
-    validateMongoDbId(id)
-    try {
-        const userupdated = await User.findByIdAndUpdate(id,{
-            username:req?.body.username,
-            email: req?.body?.email,
-            dateOfBirth:req?.body?.dateOfBirth,
-            phoneNumber:req?.body?.phoneNumber,
-            address:req?.body?.address,
-            profileImage:req?.body?.profileImage,
-        },{
-            new:true
-        });
+const updateUser = asyncHandler(async (req, res, next) => {
+  const { id } = req.user;
+  validateMongoDbId(id);
+
+  try {
+    const userupdated = await User.findByIdAndUpdate(id, {
+      username: req?.body.username,
+      email: req?.body?.email,
+      dateOfBirth: req?.body?.dateOfBirth,
+      phoneNumber: req?.body?.phoneNumber,
+      address: req?.body?.address,
+      profileImage: req?.body?.profileImage,
+    }, {
+      new: true
+    });
 
     if (!userupdated) {
-      return res.status(404).json({ message: `User with ID ${id} not found` });
+      // Change: Use a custom error class for better organization
+      throw new CustomError(`User with ID ${id} not found`, 404);
     }
 
     console.log(`User with ID ${id} Updated`);
     res.json(userupdated);
-    } catch (error) {
-        throw new Error(error)
-    }
-})
-
+  } catch (error) {
+    console.error(error);
+    next(error); // Use next to pass the error to the error handling middleware
+  }
+});
 
 
 //UnBlock User
-const blockUser= asyncHandler(async(req,res)=>{
-    const {id} = req.params;
-    validateMongoDbId(id)
-    try {
-        const userblocked= await User.findByIdAndUpdate(id,{
-            isBlocked:true,
-        },{
-            new:true
-        });
+const blockUser = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  validateMongoDbId(id);
+
+  try {
+    const userblocked = await User.findByIdAndUpdate(id, {
+      isBlocked: true,
+    }, {
+      new: true
+    });
 
     if (!userblocked) {
-      return res.status(404).json({ message: `User with ID ${id} not found` });
+      // Change: Use a custom error class for better organization
+      throw new CustomError(`User with ID ${id} not found`, 404);
     }
 
     console.log(`User with ID ${id} blocked`);
-    res.json({message:'User blocked',});
-    } catch (error) {
-        throw new Error(error)
-    }
-})
-
+    res.json({ message: 'User blocked' });
+  } catch (error) {
+    console.error(error);
+    next(error); // Use next to pass the error to the error handling middleware
+  }
+});
 
 
 //UnBlock User
-const unBlockUser= asyncHandler(async(req,res)=>{
-    const {id} = req.params;
-    validateMongoDbId(id)
-    try {
-        const userblocked= await User.findByIdAndUpdate(id,{
-            isBlocked:false,
-        },{
-            new:true
-        });
+const unBlockUser = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  validateMongoDbId(id);
 
-    if (!userblocked) {
-      return res.status(404).json({ message: `User with ID ${id} not found` });
+  try {
+    const userUnblocked = await User.findByIdAndUpdate(id, {
+      isBlocked: false,
+    }, {
+      new: true
+    });
+
+    if (!userUnblocked) {
+      // Change: Use a custom error class for better organization
+      throw new CustomError(`User with ID ${id} not found`, 404);
     }
 
     console.log(`User with ID ${id} unblocked`);
-    res.json({message:`User unblocked`});
-    } catch (error) {
-        throw new Error(error)
-    }
-})
+    res.json({ message: `User unblocked` });
+  } catch (error) {
+    console.error(error);
+    next(error); // Use next to pass the error to the error handling middleware
+  }
+});
+
+
+
+//
 
 const passPinVerification = asyncHandler(async(req,res)=>{
   const { email, pin } = req.body;
@@ -482,8 +486,7 @@ const passPinVerification = asyncHandler(async(req,res)=>{
   }
 }) 
 
-
-const changePassword = asyncHandler(async (req, res) => {
+const changePassword = asyncHandler(async (req, res, next) => {
   try {
     // Assuming you want to get the new password and email from the request body
     const { email, password, confirmPassword } = req.body;
@@ -499,54 +502,60 @@ const changePassword = asyncHandler(async (req, res) => {
     // Find the user in the database based on the email
     const user = await User.findOne({ email });
 
-    // If the user is not found, return an error
+    // If the user is not found, throw a custom error
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      throw new CustomError('User not found', 404);
     }
 
     // Update the password if a new one is provided
     if (password) {
       user.password = password;
       const updatedUser = await user.save();
-      res.json({success:'True',message:'password changed',updatedUser});
+      res.json({ success: 'True', message: 'Password changed', data:updatedUser });
     } else {
-      res.status(400).json({success:'Failed', message: 'Password not provided' });
+      // If password is not provided, throw a custom error
+      throw new CustomError('Password not provided', 400);
     }
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Internal Server Error' });
+    next(new CustomError('Internal Server Error', 500));
   }
 });
 
-
-const forgotPasswordToken = asyncHandler(async (req, res) => {
-  const { email } = req.body;
-
-  console.log('Received request for email:', email);
-
-  // Find the user based on the provided email
-  const user = await User.findOne({ email });
-
-  if (!user) {
-     // Return a user-friendly response if user not found
-     return res.status(404).json({ error: `User with ${email} not found` });
-  }
-  console.log(user);
+const forgotPasswordToken = asyncHandler(async (req, res, next) => {
   try {
-     const token = await user.createVerificationToken();
-     await user.save(); 
-     const resetUrl = `Hi, please follow this link to reset your password. This token is valid for 10 minutes ${token}`;
-     const emailData = {
-        to: email,
-        subject: 'Forgot Password',
-        text: 'hey user',
-        htm: resetUrl,
-     };
-     await sendEmail(emailData, req, res);//pass the data to email create
-     res.json(token);
+    const { email } = req.body;
+
+    console.log('Received request for email:', email);
+
+    // Find the user based on the provided email
+    const user = await User.findOne({ email });
+
+    // If the user is not found, throw a custom error
+    if (!user) {
+      throw new CustomError(`User with ${email} not found`, 404);
+    }
+
+    console.log(user);
+    const token = await user.createVerificationToken();
+    await user.save(); 
+    const resetUrl = `Hi, please follow this link to reset your password. This token is valid for 10 minutes ${token}`;
+    const emailData = {
+      to: email,
+      subject: 'Forgot Password',
+      text: 'hey user',
+      htm: resetUrl,
+    };
+    await sendEmail(emailData, req, res); // pass the data to email create
+    return res.status(200).json({
+      success: true,
+      message: 'Password verification pin sent successfully',
+      data: { token: token}, // Replace 'your_token_value' with the actual token
+    });
+;
   } catch (error) {
-     throw new Error(error);
-     // res.status(500).json({ error: 'An error occurred' });
+    console.error(error);
+    next(new CustomError('Internal Server Error', 500));
   }
 });
 
