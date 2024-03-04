@@ -231,14 +231,17 @@ const getAllUser = asyncHandler(async (req, res, next) => {
     const users = await User.find();
 
     if (!users || users.length === 0) {
-      // Change: Use a custom error class for better organization
       throw new CustomError('Users not found', 404);
     }
 
-    res.status(200).json(users);
+    res.status(200).json({
+      success: true,
+      message: 'Users fetched successfully',
+      data: users,
+    });
   } catch (error) {
     console.error(error);
-    next(error); // Use next to pass the error to the error handling middleware
+    next(error);
   }
 });
 
@@ -273,7 +276,7 @@ const createVerificationPin = asyncHandler(async (req, res, next) => {
     // Save the pin to the database
     await existingPin.save();
 
-    res.status(200).json({ message: 'Pin created/updated successfully' });
+    res.status(200).json({ success: true, message: 'Pin created/updated successfully' });
   } catch (error) {
     console.error('Error saving pin:', error);
     next(error); // Use next to pass the error to the error handling middleware
@@ -324,14 +327,17 @@ const getUser = asyncHandler(async (req, res, next) => {
     const user = await User.findById(id);
 
     if (!user) {
-      // Change: Use a custom error class for better organization
       throw new CustomError('User not found', 404);
     }
 
-    res.status(200).json(user);
+    res.status(200).json({
+      success: true,
+      message: 'User fetched successfully',
+      data: user,
+    });
   } catch (error) {
     console.error(error);
-    next(error); // Use next to pass the error to the error handling middleware
+    next(error);
   }
 });
 
@@ -385,7 +391,11 @@ const updateUser = asyncHandler(async (req, res, next) => {
     }
 
     console.log(`User with ID ${id} Updated`);
-    res.json(userupdated);
+    res.status(200).json({
+      success: true,
+      message: 'User updated successfully',
+      data: userupdated,
+    });
   } catch (error) {
     console.error(error);
     next(error); // Use next to pass the error to the error handling middleware
@@ -411,7 +421,7 @@ const blockUser = asyncHandler(async (req, res, next) => {
     }
 
     console.log(`User with ID ${id} blocked`);
-    res.json({ message: 'User blocked' });
+    res.json({success: true, message: 'User blocked',data:userblocked });
   } catch (error) {
     console.error(error);
     next(error); // Use next to pass the error to the error handling middleware
@@ -437,7 +447,7 @@ const unBlockUser = asyncHandler(async (req, res, next) => {
     }
 
     console.log(`User with ID ${id} unblocked`);
-    res.json({ message: `User unblocked` });
+    res.json({success: true, message: 'User Unblocked',data:userUnblocked });
   } catch (error) {
     console.error(error);
     next(error); // Use next to pass the error to the error handling middleware
