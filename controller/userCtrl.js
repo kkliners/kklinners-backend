@@ -126,10 +126,15 @@ const loginUser = asyncHandler(async (req, res, next) => {
         message: 'Login successful',
         data: {
           _id: user._id,
-          firstname: user.firstname,
-          lastname: user.lastname,
+          firstName: user.firstName,
+          lastName: user.lastName,
           email: user.email,
+          username:user.username,
+          phone: user.phone,
+          address: user.address,
+          profileImage:user.profileImage,
           mobile: user.mobile,
+          role:user.role,
           token: generatedToken,
         },
       });

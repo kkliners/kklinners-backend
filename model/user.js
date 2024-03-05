@@ -52,9 +52,7 @@ const userSchema = new Schema({
     
   },
   profileImage: {
-    public_id: {
-      type: String
-    },
+    
     url: {
       type: String
     }
