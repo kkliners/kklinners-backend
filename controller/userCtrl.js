@@ -11,7 +11,12 @@ function generateOTP() {
 
   return otp;
 }
-
+class CustomError extends Error {
+  constructor(message) {
+      super(message);
+      this.name = 'CustomError';
+  }
+}
 //SignUP USer And send email
 const registerUser = asyncHandler(async (req, res, next) => {
   try {
@@ -189,7 +194,7 @@ const filldata = asyncHandler(async (req, res, next) => {
     user.phone = mobile;
     user.address = address;
     user.profileImage = {
-      public_id: img.public_id,
+     
       url: img.secure_url,
     };
 

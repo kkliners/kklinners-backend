@@ -5,6 +5,12 @@ const { Error } = require('mongoose');
 const calculateServiceRate = require('../utils/calculateRate')
 const https = require('https');
 const axios = require('axios');
+class CustomError extends Error {
+  constructor(message) {
+      super(message);
+      this.name = 'CustomError';
+  }
+}
 //make sure when the price is generated it is then parsed in paystack amount to be paid
   
 // class PaymentError extends Error {
