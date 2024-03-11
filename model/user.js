@@ -1,6 +1,6 @@
 const mongoose = require('mongoose'); // Erase if already required
 const bcrypt = require('bcryptjs');
-
+const uuid = require('uuid');
 const crypto = require('crypto');
 
 
@@ -9,6 +9,11 @@ const crypto = require('crypto');
 const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
+  user_id: {
+    type: String,
+    default: () => `Klinner-${uuid.v4()}`, // Using a function to concatenate prefix and UUID
+    unique: true,
+}, 
   username: {
     type: String,
     unique:true,

@@ -168,7 +168,7 @@ const paystackPayment = asyncHandler(async (req, res, next) => {
 
 const createCleaningService = asyncHandler(async (req, res, next) => {
   try {
-    const { id, serviceName, serviceCategory, areas, bookingDate, bookingTime, location } = req.body;
+    const { service_id, serviceName, serviceCategory, areas, bookingDate, bookingTime, location } = req.body;
     const paymentStatus = 'pending';
 
     // Check if the payment status is successful
@@ -176,7 +176,7 @@ const createCleaningService = asyncHandler(async (req, res, next) => {
       throw new PaymentError('Payment unsuccessful');
     }
 
-    const user = await User.findById(id);
+    const user = await User.findOne(service_id);
 
     // Calculate the service rate based on the selected areas
     const serviceRate = calculateServiceRate(areas);
@@ -189,7 +189,7 @@ const createCleaningService = asyncHandler(async (req, res, next) => {
 
       // Create a new CleaningService instance
       const newCleaningService = new Service({
-        user_id: user.id,
+        user_id: user.user_id,
         serviceName,
         serviceCategory,
         areas,

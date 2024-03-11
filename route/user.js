@@ -7,7 +7,7 @@ const {getAllUser,getUser, deleteUser, updateUser,blockUser,unBlockUser,createVe
 const {getUserServices}= require('../controller/bookingCtrl')
 route.get('/all-users',isAdmin,authMiddleware, getAllUser)
 route.get('/:id',authMiddleware, getUser)
-route.delete('/:id',authMiddleware,deleteUser)
+route.delete('/delete-user',authMiddleware,deleteUser)
 route.put('/edit-user/:id',authMiddleware,updateUser)
 route.put('/block-user/:id',isAdmin,authMiddleware,blockUser)
 route.put('/unblock-user/:id',isAdmin,authMiddleware,unBlockUser)

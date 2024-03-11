@@ -5,6 +5,7 @@ const dbConnect = require('./config/dbConnect');
 const authRoute = require('./route/auth')
 const userRoute = require('./route/user')
 const serviceRoute = require('./route/book');
+const formidableMiddleware = require('express-formidable');
 const cors = require('cors')
 const {notFound,errorHandler} = require('./middleware/errorHandler')
 const app = express();
@@ -16,7 +17,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(morgan('tiny'));
 app.use(cors())
-
+// Apply formidable middleware to all routes
+app.use(formidableMiddleware());
 
 
 app.use('/api/v1/auth',authRoute)

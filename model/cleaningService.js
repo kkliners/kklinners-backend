@@ -1,9 +1,14 @@
 const mongoose = require('mongoose');
-
+const uuid = require('uuid');
 
 const cleaningServiceSchema = new mongoose.Schema({
+    service_id: {
+        type: String,
+        default: () => `Klinner-${uuid.v4()}`, // Using a function to concatenate prefix and UUID
+        unique: true,
+    }, 
   user_id: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: String,
       ref: 'User', // Reference to the User collection
       required: true
   },

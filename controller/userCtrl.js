@@ -5,6 +5,7 @@ const {token }= require('../config/jwt')
 const {validateMongoDbId} = require('../utils/validateMongodbId');
 const sendEmail = require('../utils/email')
 const cloudinary = require('../utils/cloudinary');
+const upload = require('../utils/multerUpload')
 function generateOTP() {
   // Generate a 4-digit random OTP
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -17,6 +18,73 @@ class CustomError extends Error {
       this.name = 'CustomError';
   }
 }
+
+//Image upload with Multer and Cloudinary
+// const imageUpload = ('/upload', upload.single('image',function (req,res) {
+//   cloudinary.uploader.upload(req.file.path,function(err,result){
+//     if (err) {
+//       throw new CustomError('Image upload fails', 400);
+//     }
+//     res.status(201).json({
+//       success: true,
+//       message: 'User image uploaded successfully..',
+//       data: result,
+//     });
+//   })
+// }))
+// Express route handler for image upload
+const imageUpload = (req, res, next) => {
+  upload.single('image')(req, res, async (multerErr) => {
+    if (multerErr) {
+      // Handle multer upload error
+      return next(multerErr);
+    }
+
+    try {
+      // Generate a unique identifier (demo: timestamp + random number)
+      const uniqueIdentifier = `${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+      // Create a promise for Cloudinary upload
+      const cloudinaryUpload = () =>
+        new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            { public_id: uniqueIdentifier, folder: 'profileImage' },
+            (err, result) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(result);
+              }
+            }
+          );
+
+          // Pipe the buffer to the Cloudinary upload stream
+          uploadStream.end(req.file.buffer);
+        });
+
+      // Upload to Cloudinary using the promise
+      const cloudinaryResult = await cloudinaryUpload();
+
+      // Extract the HTTP URL (url) property
+      const httpUrl = cloudinaryResult.url;
+
+      // Respond with the extracted HTTP URL
+      res.status(201).json({
+        success: true,
+        message: 'User image uploaded successfully.',
+        data: { url: httpUrl },
+      });
+    } catch (cloudinaryErr) {
+      // Handle Cloudinary upload error
+      console.error('Cloudinary upload error:', cloudinaryErr);
+      return res.status(400).json({
+        success: false,
+        error: 'Image upload fails',
+        details: null,
+      });
+    }
+  });
+};
 //SignUP USer And send email
 const registerUser = asyncHandler(async (req, res, next) => {
   try {
@@ -118,7 +186,7 @@ const loginUser = asyncHandler(async (req, res, next) => {
 
     if (user && (await user.isPasswordMatched(password))) {
       // Generate a new JWT token
-      const generatedToken = token(user._id);
+      const generatedToken = token(user.user_id);
 
       // Assign the generated token to the user object
       user.token = generatedToken;
@@ -130,7 +198,7 @@ const loginUser = asyncHandler(async (req, res, next) => {
         success: true,
         message: 'Login successful',
         data: {
-          _id: user._id,
+          user_id: user.user_id,
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
@@ -145,7 +213,7 @@ const loginUser = asyncHandler(async (req, res, next) => {
       });
     } else {
       // Provide a more specific error message for login credential issues
-      throw new Error('Incorrect email or password');
+      throw new CustomError('Incorrect email or password');
     }
   } catch (error) {
     console.error(error);
@@ -157,12 +225,91 @@ const loginUser = asyncHandler(async (req, res, next) => {
   }
 });
 
+// const filldata = asyncHandler(async (req, res, next) => {
+
+
+//   try {
+//     const { user_id } = req.body;
+    
+
+//     const user = await User.findOne({user_id});
+
+//     // Change: Use a custom error class for better organization
+//     if (!user) {
+//       throw new CustomError('User not found', 404);
+//     }
+
+//     // Validate required fields
+//     const { username, firstName, lastName, mobile, address, profileImage } = req.body;
+//     if (!username || !firstName || !lastName || !mobile || !address) {
+//       // Change: Use a custom error class for better organization
+//       throw new CustomError('All fields are required', 400);
+//     }
+
+//     const img = await cloudinary.uploader.upload(profileImage, {
+//       folder: 'profileImage',
+//     });
+
+//     // Check for existing username
+//     const usernameExists = await User.findOne({ username });
+//     if (usernameExists && usernameExists._id.toString() !== userId) {
+//       // Change: Use a custom error class for better organization
+//       throw new CustomError('Username already exists', 400);
+//     }
+
+//     // Update user properties
+//     user.username = username;
+//     user.firstName = firstName;
+//     user.lastName = lastName;
+//     user.phone = mobile;
+//     user.address = address;
+//     user.profileImage = {
+     
+//       url: img.secure_url,
+//     };
+
+//     if (!user.userData) {
+//       user.userData = [];
+//     }
+
+//     // Generate a new JWT token
+//     const generatedToken = token(user.user_id);
+
+//     // Save the user with the new token
+//     user.token = generatedToken;
+//     await user.save();
+
+//     // Include the generated token in the response
+//     res.status(200).json({
+//       success: true,
+//       message: 'User updated successfully',
+//       data: {
+//         user: {
+//           user_id: user.user_id,
+//           email:user.email,
+//           username: user.username,
+//           firstName: user.firstName,
+//           lastName: user.lastName,
+//           mobile: user.phone,
+//           address: user.address,
+//           profileImage: user.profileImage,
+//           token: generatedToken,
+//         },
+//       },
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     next(error); // Use next to pass the error to the error handling middleware
+//   }
+// });
+
+
+
 const filldata = asyncHandler(async (req, res, next) => {
   try {
-    const { id } = req.body;
-    validateMongoDbId(id);
-
-    const user = await User.findById(id);
+    const { user_id } = req.body;
+    console.log(user_id)
+    const user = await User.findOne({ user_id });
 
     // Change: Use a custom error class for better organization
     if (!user) {
@@ -170,19 +317,35 @@ const filldata = asyncHandler(async (req, res, next) => {
     }
 
     // Validate required fields
-    const { username, firstName, lastName, mobile, address, profileImage } = req.body;
+    const { username, firstName, lastName, mobile, address } = req.body;
     if (!username || !firstName || !lastName || !mobile || !address) {
       // Change: Use a custom error class for better organization
       throw new CustomError('All fields are required', 400);
     }
 
-    const img = await cloudinary.uploader.upload(profileImage, {
-      folder: 'profileImage',
-    });
+    let profileImage;
+
+    // Check if a file is uploaded
+    if (req.file) {
+      // Upload the image to Cloudinary
+      const img = await cloudinary.uploader.upload_stream(
+        { folder: 'profileImage' },
+        (err, result) => {
+          if (err) {
+            throw new CustomError('Image upload fails', 400);
+          } else {
+            profileImage = result.secure_url;
+          }
+        }
+      ).end(req.file.buffer);
+    } else {
+      // If no file is uploaded, use a default or handle it as needed
+      profileImage = 'http://res.cloudinary.com/diemc336d/image/upload/v1710120724/profileImage/1710120721616_56.jpg';
+    }
 
     // Check for existing username
     const usernameExists = await User.findOne({ username });
-    if (usernameExists && usernameExists._id.toString() !== userId) {
+    if (usernameExists && usernameExists._id.toString() !== user_id) {
       // Change: Use a custom error class for better organization
       throw new CustomError('Username already exists', 400);
     }
@@ -194,8 +357,7 @@ const filldata = asyncHandler(async (req, res, next) => {
     user.phone = mobile;
     user.address = address;
     user.profileImage = {
-     
-      url: img.secure_url,
+      url: profileImage,
     };
 
     if (!user.userData) {
@@ -203,7 +365,7 @@ const filldata = asyncHandler(async (req, res, next) => {
     }
 
     // Generate a new JWT token
-    const generatedToken = token(user._id);
+    const generatedToken = token(user.user_id);
 
     // Save the user with the new token
     user.token = generatedToken;
@@ -215,8 +377,8 @@ const filldata = asyncHandler(async (req, res, next) => {
       message: 'User updated successfully',
       data: {
         user: {
-          _id: user._id,
-          email:user.email,
+          user_id: user.user_id,
+          email: user.email,
           username: user.username,
           firstName: user.firstName,
           lastName: user.lastName,
@@ -262,7 +424,7 @@ const createVerificationPin = asyncHandler(async (req, res, next) => {
 
   try {
     // Assuming you have a User model defined
-    const user = await User.findOne({ _id: user_id });
+    const user = await User.findOne({user_id });
 
     if (!user) {
       // Change: Use a custom error class for better organization
@@ -270,7 +432,7 @@ const createVerificationPin = asyncHandler(async (req, res, next) => {
     }
 
     // Check if a pin already exists for the user
-    let existingPin = await Pin.findOne({ user_id: user._id });
+    let existingPin = await Pin.findOne({ user_id });
 
     if (existingPin) {
       // If a pin exists, update the existing pin
@@ -278,7 +440,7 @@ const createVerificationPin = asyncHandler(async (req, res, next) => {
     } else {
       // If no pin exists, create a new pin document
       existingPin = new Pin({
-        user_id: user._id,
+        user_id: user.user_id,
         pin: pin,
       });
     }
@@ -299,7 +461,7 @@ const verifyPin = asyncHandler(async (req, res, next) => {
 
   try {
     // Find the user with the provided user_id
-    const user = await User.findOne({ _id: user_id });
+    const user = await User.findOne({ user_id });
 
     if (!user) {
       // Change: Use a custom error class for better organization
@@ -307,7 +469,7 @@ const verifyPin = asyncHandler(async (req, res, next) => {
     }
 
     // Find the PIN for the user
-    const storedPin = await Pin.findOne({ user_id: user._id });
+    const storedPin = await Pin.findOne({ user_id });
 
     if (!storedPin) {
       // Change: Use a custom error class for better organization
@@ -316,7 +478,7 @@ const verifyPin = asyncHandler(async (req, res, next) => {
 
     // Compare the provided PIN with the stored PIN
     if (pin === storedPin.pin) {
-      return res.status(200).json({ success: true, message: 'PIN verified successfully' });
+      return res.status(200).json({ success: true, message: 'PIN verified successfully' ,data:pin});
     } else {
       // Change: Use a custom error class for better organization
       throw new CustomError('Incorrect PIN', 403);
@@ -329,12 +491,12 @@ const verifyPin = asyncHandler(async (req, res, next) => {
 
 //Get Single User In DataBase
 const getUser = asyncHandler(async (req, res, next) => {
-  const { id } = req.params;
+  const { user_id } = req.params;
 
   try {
-    validateMongoDbId(id);
+    
 
-    const user = await User.findById(id);
+    const user = await User.findOne(user_id);
 
     if (!user) {
       throw new CustomError('User not found', 404);
@@ -354,20 +516,25 @@ const getUser = asyncHandler(async (req, res, next) => {
 
 //Delete User
 const deleteUser = asyncHandler(async (req, res, next) => {
-  const { id } = req.params;
-  validateMongoDbId(id);
+  const { user_id } = req.body;
+  console.log(req.body);
 
   try {
-    const userDeleted = await User.findByIdAndDelete(id);
-
-    if (!userDeleted) {
-      // Change: Use a custom error class for better organization
-      throw new CustomError(`User with ID ${id} not found`, 404);
+    console.log(user_id)
+    // Check if user_id is undefined or null
+    if (!user_id) {
+      throw new CustomError('Invalid user ID', 400);
     }
 
-    console.log(`User with ID ${id} deleted`);
+    const userDeleted = await User.findOneAndDelete({ user_id });
+
+    if (!userDeleted) {
+      throw new CustomError(`User with ID ${user_id} not found`, 404);
+    }
+
+    console.log(`User with ID ${user_id} deleted`);
     res.json({
-      status: true,
+      success: true,
       message: "User Deleted"
     });
   } catch (error) {
@@ -380,31 +547,31 @@ const deleteUser = asyncHandler(async (req, res, next) => {
 
 //update User
 const updateUser = asyncHandler(async (req, res, next) => {
-  const { id } = req.user;
-  validateMongoDbId(id);
+  const { user_id } = req.user;
 
   try {
-    const userupdated = await User.findByIdAndUpdate(id, {
-      username: req?.body.username,
-      email: req?.body?.email,
-      dateOfBirth: req?.body?.dateOfBirth,
-      phoneNumber: req?.body?.phoneNumber,
-      address: req?.body?.address,
-      profileImage: req?.body?.profileImage,
-    }, {
-      new: true
+    const updateFields = {
+      username: req.body.username,
+      email: req.body.email,
+      dateOfBirth: req.body.dateOfBirth,
+      phoneNumber: req.body.phoneNumber,
+      address: req.body.address,
+      profileImage: req.body.profileImage,
+    };
+
+    const userUpdated = await User.findOneAndUpdate( user_id , updateFields, {
+      new: true,
     });
 
-    if (!userupdated) {
-      // Change: Use a custom error class for better organization
-      throw new CustomError(`User with ID ${id} not found`, 404);
+    if (!userUpdated) {
+      throw new CustomError(`User with ID ${user_id} not found`, 404);
     }
 
-    console.log(`User with ID ${id} Updated`);
+    console.log(`User with ID ${user_id} Updated`);
     res.status(200).json({
       success: true,
       message: 'User updated successfully',
-      data: userupdated,
+      data: userUpdated,
     });
   } catch (error) {
     console.error(error);
@@ -415,11 +582,11 @@ const updateUser = asyncHandler(async (req, res, next) => {
 
 //UnBlock User
 const blockUser = asyncHandler(async (req, res, next) => {
-  const { id } = req.params;
-  validateMongoDbId(id);
+  const { user_id } = req.params;
+  
 
   try {
-    const userblocked = await User.findByIdAndUpdate(id, {
+    const userblocked = await User.findOneAndUpdate(user_id, {
       isBlocked: true,
     }, {
       new: true
@@ -427,10 +594,10 @@ const blockUser = asyncHandler(async (req, res, next) => {
 
     if (!userblocked) {
       // Change: Use a custom error class for better organization
-      throw new CustomError(`User with ID ${id} not found`, 404);
+      throw new CustomError(`User with ID ${user_id} not found`, 404);
     }
 
-    console.log(`User with ID ${id} blocked`);
+    console.log(`User with ID ${user_id} blocked`);
     res.json({success: true, message: 'User blocked',data:userblocked });
   } catch (error) {
     console.error(error);
@@ -441,11 +608,11 @@ const blockUser = asyncHandler(async (req, res, next) => {
 
 //UnBlock User
 const unBlockUser = asyncHandler(async (req, res, next) => {
-  const { id } = req.params;
-  validateMongoDbId(id);
+  const { user_id } = req.params;
+  
 
   try {
-    const userUnblocked = await User.findByIdAndUpdate(id, {
+    const userUnblocked = await User.findOneAndUpdate(user_id, {
       isBlocked: false,
     }, {
       new: true
@@ -453,10 +620,10 @@ const unBlockUser = asyncHandler(async (req, res, next) => {
 
     if (!userUnblocked) {
       // Change: Use a custom error class for better organization
-      throw new CustomError(`User with ID ${id} not found`, 404);
+      throw new CustomError(`User with ID ${user_id} not found`, 404);
     }
 
-    console.log(`User with ID ${id} unblocked`);
+    console.log(`User with ID ${user_id} unblocked`);
     res.json({success: true, message: 'User Unblocked',data:userUnblocked });
   } catch (error) {
     console.error(error);
@@ -580,4 +747,4 @@ const forgotPasswordToken = asyncHandler(async (req, res, next) => {
 });
 
 
-module.exports = {registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,passPinVerification ,verifyEmail,createVerificationPin,verifyPin}
+module.exports = {imageUpload ,registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,passPinVerification ,verifyEmail,createVerificationPin,verifyPin}

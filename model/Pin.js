@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 
 const pinSchema = new mongoose.Schema({
   user_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    type: String, // Assuming user_id in userSchema is of type String
+    ref: 'User', // Reference the 'User' model
     required: true,
   },
   pin: {
