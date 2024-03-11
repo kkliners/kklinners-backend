@@ -225,91 +225,14 @@ const loginUser = asyncHandler(async (req, res, next) => {
   }
 });
 
-// const filldata = asyncHandler(async (req, res, next) => {
-
-
-//   try {
-//     const { user_id } = req.body;
-    
-
-//     const user = await User.findOne({user_id});
-
-//     // Change: Use a custom error class for better organization
-//     if (!user) {
-//       throw new CustomError('User not found', 404);
-//     }
-
-//     // Validate required fields
-//     const { username, firstName, lastName, mobile, address, profileImage } = req.body;
-//     if (!username || !firstName || !lastName || !mobile || !address) {
-//       // Change: Use a custom error class for better organization
-//       throw new CustomError('All fields are required', 400);
-//     }
-
-//     const img = await cloudinary.uploader.upload(profileImage, {
-//       folder: 'profileImage',
-//     });
-
-//     // Check for existing username
-//     const usernameExists = await User.findOne({ username });
-//     if (usernameExists && usernameExists._id.toString() !== userId) {
-//       // Change: Use a custom error class for better organization
-//       throw new CustomError('Username already exists', 400);
-//     }
-
-//     // Update user properties
-//     user.username = username;
-//     user.firstName = firstName;
-//     user.lastName = lastName;
-//     user.phone = mobile;
-//     user.address = address;
-//     user.profileImage = {
-     
-//       url: img.secure_url,
-//     };
-
-//     if (!user.userData) {
-//       user.userData = [];
-//     }
-
-//     // Generate a new JWT token
-//     const generatedToken = token(user.user_id);
-
-//     // Save the user with the new token
-//     user.token = generatedToken;
-//     await user.save();
-
-//     // Include the generated token in the response
-//     res.status(200).json({
-//       success: true,
-//       message: 'User updated successfully',
-//       data: {
-//         user: {
-//           user_id: user.user_id,
-//           email:user.email,
-//           username: user.username,
-//           firstName: user.firstName,
-//           lastName: user.lastName,
-//           mobile: user.phone,
-//           address: user.address,
-//           profileImage: user.profileImage,
-//           token: generatedToken,
-//         },
-//       },
-//     });
-//   } catch (error) {
-//     console.error(error);
-//     next(error); // Use next to pass the error to the error handling middleware
-//   }
-// });
-
-
-
 const filldata = asyncHandler(async (req, res, next) => {
+
+
   try {
     const { user_id } = req.body;
-    console.log(user_id)
-    const user = await User.findOne({ user_id });
+    
+console.log(user_id)
+    const user = await User.findOne({user_id});
 
     // Change: Use a custom error class for better organization
     if (!user) {
@@ -317,35 +240,19 @@ const filldata = asyncHandler(async (req, res, next) => {
     }
 
     // Validate required fields
-    const { username, firstName, lastName, mobile, address } = req.body;
+    const { username, firstName, lastName, mobile, address, profileImage } = req.body;
     if (!username || !firstName || !lastName || !mobile || !address) {
       // Change: Use a custom error class for better organization
       throw new CustomError('All fields are required', 400);
     }
 
-    let profileImage;
-
-    // Check if a file is uploaded
-    if (req.file) {
-      // Upload the image to Cloudinary
-      const img = await cloudinary.uploader.upload_stream(
-        { folder: 'profileImage' },
-        (err, result) => {
-          if (err) {
-            throw new CustomError('Image upload fails', 400);
-          } else {
-            profileImage = result.secure_url;
-          }
-        }
-      ).end(req.file.buffer);
-    } else {
-      // If no file is uploaded, use a default or handle it as needed
-      profileImage = 'http://res.cloudinary.com/diemc336d/image/upload/v1710120724/profileImage/1710120721616_56.jpg';
-    }
+    const img = await cloudinary.uploader.upload(profileImage, {
+      folder: 'profileImage',
+    });
 
     // Check for existing username
     const usernameExists = await User.findOne({ username });
-    if (usernameExists && usernameExists._id.toString() !== user_id) {
+    if (usernameExists && usernameExists._id.toString() !== userId) {
       // Change: Use a custom error class for better organization
       throw new CustomError('Username already exists', 400);
     }
@@ -357,7 +264,8 @@ const filldata = asyncHandler(async (req, res, next) => {
     user.phone = mobile;
     user.address = address;
     user.profileImage = {
-      url: profileImage,
+     
+      url: img.secure_url,
     };
 
     if (!user.userData) {
@@ -378,7 +286,7 @@ const filldata = asyncHandler(async (req, res, next) => {
       data: {
         user: {
           user_id: user.user_id,
-          email: user.email,
+          email:user.email,
           username: user.username,
           firstName: user.firstName,
           lastName: user.lastName,
@@ -394,6 +302,98 @@ const filldata = asyncHandler(async (req, res, next) => {
     next(error); // Use next to pass the error to the error handling middleware
   }
 });
+
+
+
+// const filldata = asyncHandler(async (req, res, next) => {
+//   try {
+//     const  user_id  = req.body.user_id;
+//     console.log(user_id)
+//     const user = await User.findOne({ user_id });
+
+//     // Change: Use a custom error class for better organization
+//     if (!user) {
+//       throw new CustomError('User not found', 404);
+//     }
+
+//     // Validate required fields
+//     const { username, firstName, lastName, mobile, address } = req.body;
+//     if (!username || !firstName || !lastName || !mobile || !address) {
+//       // Change: Use a custom error class for better organization
+//       throw new CustomError('All fields are required', 400);
+//     }
+
+//     let profileImage;
+
+//     // Check if a file is uploaded
+//     if (req.file) {
+//       // Upload the image to Cloudinary
+//       const img = await cloudinary.uploader.upload_stream(
+//         { folder: 'profileImage' },
+//         (err, result) => {
+//           if (err) {
+//             throw new CustomError('Image upload fails', 400);
+//           } else {
+//             profileImage = result.secure_url;
+//           }
+//         }
+//       ).end(req.file.buffer);
+//     } else {
+//       // If no file is uploaded, use a default or handle it as needed
+//       profileImage = 'http://res.cloudinary.com/diemc336d/image/upload/v1710120724/profileImage/1710120721616_56.jpg';
+//     }
+
+//     // Check for existing username
+//     const usernameExists = await User.findOne({ username });
+//     if (usernameExists && usernameExists._id.toString() !== user_id) {
+//       // Change: Use a custom error class for better organization
+//       throw new CustomError('Username already exists', 400);
+//     }
+
+//     // Update user properties
+//     user.username = username;
+//     user.firstName = firstName;
+//     user.lastName = lastName;
+//     user.phone = mobile;
+//     user.address = address;
+//     user.profileImage = {
+//       url: profileImage,
+//     };
+
+//     if (!user.userData) {
+//       user.userData = [];
+//     }
+
+//     // Generate a new JWT token
+//     const generatedToken = token(user.user_id);
+
+//     // Save the user with the new token
+//     user.token = generatedToken;
+//     await user.save();
+
+//     // Include the generated token in the response
+//     res.status(200).json({
+//       success: true,
+//       message: 'User updated successfully',
+//       data: {
+//         user: {
+//           user_id: user.user_id,
+//           email: user.email,
+//           username: user.username,
+//           firstName: user.firstName,
+//           lastName: user.lastName,
+//           mobile: user.phone,
+//           address: user.address,
+//           profileImage: user.profileImage,
+//           token: generatedToken,
+//         },
+//       },
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     next(error); // Use next to pass the error to the error handling middleware
+//   }
+// });
 
 
 //Get All User In DataBase

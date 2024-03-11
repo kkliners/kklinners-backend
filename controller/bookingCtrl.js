@@ -168,7 +168,7 @@ const paystackPayment = asyncHandler(async (req, res, next) => {
 
 const createCleaningService = asyncHandler(async (req, res, next) => {
   try {
-    const { service_id, serviceName, serviceCategory, areas, bookingDate, bookingTime, location } = req.body;
+    const { user_id, serviceName, serviceCategory, areas, bookingDate, bookingTime, location } = req.body;
     const paymentStatus = 'pending';
 
     // Check if the payment status is successful
@@ -176,7 +176,7 @@ const createCleaningService = asyncHandler(async (req, res, next) => {
       throw new PaymentError('Payment unsuccessful');
     }
 
-    const user = await User.findOne(service_id);
+    const user = await User.findOne({user_id});
 
     // Calculate the service rate based on the selected areas
     const serviceRate = calculateServiceRate(areas);
@@ -267,12 +267,12 @@ const getUserServices = asyncHandler(async (req, res, next) => {
 //Get a Single Service
 
 const getSingleService = asyncHandler(async (req, res, next) => {
-  const userId = req.params.userId; // Assuming userId is passed as a parameter
-  const serviceId = req.params.serviceId;
+  const user_id = req.params.user_id; // Assuming user_id is passed as a parameter
+  const service_id = req.params.service_id;
 
   try {
-    // Fetch the service for the given userId and serviceId
-    const service = await Service.findOne({ user_id: userId, _id: serviceId });
+    // Fetch the service for the given user_id and service_id
+    const service = await Service.findOne({ user_id: user_id,service_id : service_id });
 
     if (!service) {
       next(new CustomError('Service not found', 404));
@@ -289,12 +289,12 @@ const getSingleService = asyncHandler(async (req, res, next) => {
 
 //User cancelled Service services
 const cancelService = asyncHandler(async (req, res, next) => {
-  const serviceId = req.params.serviceId;
+  const service_id = req.params.service_id;
   const { cancellationReason } = req.body;
 
   try {
     // Find the service by ID
-    const service = await Service.findById(serviceId);
+    const service = await Service.findOne(service_id);
 
     // Check if the service exists
     if (!service) {
@@ -323,12 +323,12 @@ const cancelService = asyncHandler(async (req, res, next) => {
 
 //Get a specific User Canceled Services
 const userCancelledServices = asyncHandler(async (req, res, next) => {
-  const userId = req.params.userId;
+  const user_id = req.params.user_id;
 
   try {
     // Find all canceled services for the user
     const cancelledServices = await Service.find({
-      'user_id': userId,
+      'user_id': user_id,
       'booking.progress': 'cancel',
     });
 
@@ -399,11 +399,11 @@ const getAllPendingServices = asyncHandler(async (req, res, next) => {
 
 // Controller function to get all pending services for a specific user
 const getUserPendingServices = asyncHandler(async (req, res, next) => {
-  const userId = req.params.userId;
-
+  const user_id = req.params.user_id;
+console.log(user_id)
   try {
     const userPendingServices = await Service.find({
-      'user_id': userId,
+      'user_id': user_id,
       'booking.progress': 'pending',
     });
 
@@ -417,12 +417,12 @@ const getUserPendingServices = asyncHandler(async (req, res, next) => {
 
 // Controller function to get all upcoming services for a specific user
 const getUserUpcomingServices = asyncHandler(async (req, res, next) => {
-  const userId = req.params.userId;
+  const user_id = req.params.user_id;
 
   try {
     const currentDate = new Date();
     const userUpcomingServices = await Service.find({
-      'user_id': userId,
+      'user_id': user_id,
       'booking.bookingDate': { $gte: currentDate },
       'booking.progress': { $nin: ['cancel', 'completed'] },
     });
@@ -436,11 +436,11 @@ const getUserUpcomingServices = asyncHandler(async (req, res, next) => {
 
 // Controller function to get all completed services for a specific user
 const getUserCompletedServices = asyncHandler(async (req, res, next) => {
-  const userId = req.params.userId;
+  const user_id = req.params.user_id;
 
   try {
     const userCompletedServices = await Service.find({
-      'user_id': userId,
+      'user_id': user_id,
       'booking.progress': 'completed',
     });
     
