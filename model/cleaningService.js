@@ -4,7 +4,7 @@ const uuid = require('uuid');
 const cleaningServiceSchema = new mongoose.Schema({
     service_id: {
         type: String,
-        default: () => `Klinner-${uuid.v4()}`, // Using a function to concatenate prefix and UUID
+        default: () => `Service-${uuid.v4()}`, // Using a function to concatenate prefix and UUID
         unique: true,
     }, 
   user_id: {

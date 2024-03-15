@@ -294,7 +294,7 @@ const cancelService = asyncHandler(async (req, res, next) => {
 
   try {
     // Find the service by ID
-    const service = await Service.findOne(service_id);
+    const service = await Service.findOne({service_id});
 
     // Check if the service exists
     if (!service) {
@@ -434,6 +434,30 @@ const getUserUpcomingServices = asyncHandler(async (req, res, next) => {
   }
 });
 
+const markTaskCompleted = asyncHandler(async (req, res, next) => {
+  const service_id = req.params.service_id;
+
+  try {
+    // Find the task by ID and update its progress to "completed"
+    const updatedTask = await Service.findOneAndUpdate(service_id, { 'booking.progress': 'completed' }, { new: true });
+
+    // If the task was not found, return a 404 response
+    if (!updatedTask) {
+      return res.status(404).json({ success: false, message: 'Task not found.' });
+    }
+
+    // Return the updated task as a JSON response
+    res.status(200).json({ success: true, message: 'Task progress updated to completed successfully', data: { updatedTask } });
+  } catch (error) {
+    console.error(error.message);
+    // If an error occurs, return a 500 response
+    next(new CustomError('Internal Server Error', 500));
+  }
+});
+
+
+
+
 // Controller function to get all completed services for a specific user
 const getUserCompletedServices = asyncHandler(async (req, res, next) => {
   const user_id = req.params.user_id;
@@ -455,4 +479,4 @@ const getUserCompletedServices = asyncHandler(async (req, res, next) => {
   }
 });
 
-module.exports = { createCleaningService,getUserServices ,getSingleService,paystackPayment,cancelService,userCancelledServices,getAllCompletedServices,getAllUpcomingServices,getAllPendingServices,getUserCompletedServices,getUserUpcomingServices,getUserPendingServices};
+module.exports = { createCleaningService,getUserServices ,getSingleService,paystackPayment,cancelService,userCancelledServices,getAllCompletedServices,getAllUpcomingServices,getAllPendingServices,getUserCompletedServices,getUserUpcomingServices,getUserPendingServices,markTaskCompleted};

@@ -1,7 +1,7 @@
 const express = require('express')
 const route = express.Router()
 const {authMiddleware,isAdmin} =require('../middleware/authMiddleware')
-const {createCleaningService,getSingleService,paystackPayment,cancelService,userCancelledServices,getAllCompletedServices,getAllUpcomingServices,getAllPendingServices,getUserCompletedServices,getUserUpcomingServices,getUserPendingServices}=require('../controller/bookingCtrl')
+const {createCleaningService,getSingleService,paystackPayment,cancelService,userCancelledServices,getAllCompletedServices,getAllUpcomingServices,getAllPendingServices,getUserCompletedServices,getUserUpcomingServices,getUserPendingServices,markTaskCompleted}=require('../controller/bookingCtrl')
 
 // Create a new cleaning service
 route.post('/create-service',authMiddleware, createCleaningService);
@@ -20,8 +20,11 @@ route.get('/services/upcoming',isAdmin, getAllUpcomingServices);
 // Endpoint to get all pending services for a specific user
 route.get('/:user_id/services/pending',authMiddleware, getUserPendingServices);
 // Endpoint to get all upcoming services for a specific user
-route.get('/user/:user_id/services/upcoming',authMiddleware, getUserUpcomingServices);
+route.get('/:user_id/services/upcoming',authMiddleware, getUserUpcomingServices);
 // Endpoint to get all completed services for a specific user
-route.get('/user/:user_id/services/completed',authMiddleware, getUserCompletedServices);
+route.get('/:user_id/services/completed',authMiddleware, getUserCompletedServices);
+
+// Define route to handle requests to mark a task as completed
+route.put('/:Service_id/complete',authMiddleware, markTaskCompleted);
 
 module.exports = route;
