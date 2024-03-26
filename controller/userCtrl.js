@@ -90,54 +90,30 @@ const filldata = asyncHandler(async (req, res, next) => {
   const { user_id } = req.body;
 
   try {
-    // Check if there's a file attached to the request
-    if (!req.file) {
-      throw new CustomError('Image file is required', 400);
-    }
+    
+console.log(user_id)
+    const user = await User.findOne({user_id});
 
-    // Upload image to Cloudinary
-    const cloudinaryResult = await new Promise((resolve, reject) => {
-      upload.single('image')(req, res, (multerErr) => {
-        if (multerErr) {
-          return reject(multerErr);
-        }
-
-        const uniqueIdentifier = `${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-        const uploadStream = cloudinary.uploader.upload_stream(
-          { public_id: uniqueIdentifier, folder: 'profileImage' },
-          (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          }
-        );
-        uploadStream.end(req.file.buffer);
-      });
-    });
-
-    // Extract image URL from Cloudinary result
-    const imageUrl = cloudinaryResult.url;
-
-    // Find the user by ID
-    const user = await User.findById(user_id);
-
+    // Change: Use a custom error class for better organization
     if (!user) {
       throw new CustomError('User not found', 404);
     }
 
-    // Extract user data from request body
-    const { username, firstName, lastName, mobile, address } = req.body;
-
     // Validate required fields
+    const { username, firstName, lastName, mobile, address, profileImage } = req.body;
     if (!username || !firstName || !lastName || !mobile || !address) {
+      // Change: Use a custom error class for better organization
       throw new CustomError('All fields are required', 400);
     }
 
-    // Check for existing username (excluding the current user)
-    const existingUser = await User.findOne({ username, _id: { $ne: user_id } });
-    if (existingUser) {
+    const img = await cloudinary.uploader.upload(profileImage, {
+      folder: 'profileImage',
+    });
+
+    // Check for existing username
+    const usernameExists = await User.findOne({ username });
+    if (usernameExists && usernameExists._id.toString() !== user_id) {
+      // Change: Use a custom error class for better organization
       throw new CustomError('Username already exists', 400);
     }
 
@@ -147,33 +123,47 @@ const filldata = asyncHandler(async (req, res, next) => {
     user.lastName = lastName;
     user.phone = mobile;
     user.address = address;
-    user.profileImage = { url: imageUrl }; // Set profile image URL
+    user.profileImage = {
+     
+      url: img.secure_url,
+    };
 
-    // Save the updated user
+    if (!user.userData) {
+      user.userData = [];
+    }
+
+    // Generate a new JWT token
+    const generatedToken = token(user.user_id);
+
+    // Save the user with the new token
+    user.token = generatedToken;
     await user.save();
 
-    // Respond with success message and user data
+    // Include the generated token in the response
     res.status(200).json({
       success: true,
       message: 'User updated successfully',
       data: {
         user: {
           user_id: user.user_id,
-          email: user.email,
+          email:user.email,
           username: user.username,
           firstName: user.firstName,
           lastName: user.lastName,
           mobile: user.phone,
           address: user.address,
           profileImage: user.profileImage,
+          token: generatedToken,
         },
       },
     });
   } catch (error) {
     console.error(error);
-    next(error); // Pass the error to the error handling middleware
+    next(error); // Use next to pass the error to the error handling middleware
   }
 });
+
+
 
 
 
