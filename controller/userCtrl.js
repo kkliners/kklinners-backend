@@ -226,10 +226,10 @@ const loginUser = asyncHandler(async (req, res, next) => {
 });
 
 const filldata = asyncHandler(async (req, res, next) => {
-
+  const { user_id } = req.body;
 
   try {
-    const { user_id } = req.body;
+    
     
 console.log(user_id)
     const user = await User.findOne({user_id});
