@@ -230,7 +230,6 @@ const filldata = asyncHandler(async (req, res, next) => {
 
   try {
     
-    
 console.log(user_id)
     const user = await User.findOne({user_id});
 
@@ -252,7 +251,7 @@ console.log(user_id)
 
     // Check for existing username
     const usernameExists = await User.findOne({ username });
-    if (usernameExists && usernameExists._id.toString() !== userId) {
+    if (usernameExists && usernameExists._id.toString() !== user_id) {
       // Change: Use a custom error class for better organization
       throw new CustomError('Username already exists', 400);
     }
