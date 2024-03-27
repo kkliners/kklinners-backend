@@ -2,7 +2,6 @@ const User = require('../model/user');
 const Pin = require('../model/Pin');
 const asyncHandler = require('express-async-handler');
 const {token }= require('../config/jwt')
-const {validateMongoDbId} = require('../utils/validateMongodbId');
 const sendEmail = require('../utils/email')
 const cloudinary = require('../utils/cloudinary');
 const upload = require('../utils/multerUpload')
@@ -19,21 +18,7 @@ class CustomError extends Error {
   }
 }
 
-//Image upload with Multer and Cloudinary
-// const imageUpload = ('/upload', upload.single('image',function (req,res) {
-//   cloudinary.uploader.upload(req.file.path,function(err,result){
-//     if (err) {
-//       throw new CustomError('Image upload fails', 400);
-//     }
-//     res.status(201).json({
-//       success: true,
-//       message: 'User image uploaded successfully..',
-//       data: result,
-//     });
-//   })
-// }))
-// Express route handler for image upload
-const imageUpload = (req, res, next) => {
+const userImageUpdate = (req, res, next) => {
   upload.single('image')(req, res, async (multerErr) => {
     if (multerErr) {
       // Handle multer upload error
@@ -86,88 +71,130 @@ const imageUpload = (req, res, next) => {
   });
 };
 
+//Middleware that get called in signup for userImageUpdate
+const uploadProfileImage = (req, res, next) => {
+  upload.single('image')(req, res, async (multerErr) => {
+    if (multerErr) {
+      // Handle multer upload error
+      return next(multerErr);
+    }
+  
+    try {
+      // Generate a unique identifier (demo: timestamp + random number)
+      const uniqueIdentifier = `${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  
+      // Create a promise for Cloudinary upload
+      const cloudinaryUpload = () =>
+        new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            { public_id: uniqueIdentifier, folder: 'profileImage' },
+            (err, result) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(result);
+              }
+            }
+          );
+  
+          // Pipe the buffer to the Cloudinary upload stream
+          uploadStream.end(req.file.buffer);
+        });
+  
+      // Upload to Cloudinary using the promise
+      const cloudinaryResult = await cloudinaryUpload();
+  
+      // Extract the HTTP URL (url) property
+      req.profileImageUrl = cloudinaryResult.url;
+  
+      // Call next middleware
+      next();
+    } catch (cloudinaryErr) {
+      // Handle Cloudinary upload error
+      console.error('Cloudinary upload error:', cloudinaryErr);
+      return res.status(400).json({
+        success: false,
+        error: 'Image upload fails',
+        details: null,
+      });
+    }
+  });
+};
+
 const filldata = asyncHandler(async (req, res, next) => {
-  const { user_id } = req.body;
+  // Call uploadProfileImage middleware to handle image upload
+  uploadProfileImage(req, res, async () => {
+    const { user_id } = req.body;
 
-  try {
-    
-console.log(user_id)
-    const user = await User.findOne({user_id});
+    try {
+      const user = await User.findOne({ user_id });
 
-    // Change: Use a custom error class for better organization
-    if (!user) {
-      throw new CustomError('User not found', 404);
-    }
+      if (!user) {
+        throw new CustomError('User not found', 404);
+      }
 
-    // Validate required fields
-    const { username, firstName, lastName, mobile, address, profileImage } = req.body;
-    if (!username || !firstName || !lastName || !mobile || !address) {
-      // Change: Use a custom error class for better organization
-      throw new CustomError('All fields are required', 400);
-    }
+      // Validate required fields
+      const { username, firstName, lastName, mobile, address } = req.body;
+      if (!username || !firstName || !lastName || !mobile || !address) {
+        throw new CustomError('All fields are required', 400);
+      }
 
-    const img = await cloudinary.uploader.upload(profileImage, {
-      folder: 'profileImage',
-    });
+      // Check for existing username
+      const usernameExists = await User.findOne({ username });
+      if (usernameExists && usernameExists._id.toString() !== user_id) {
+        throw new CustomError('Username already exists', 400);
+      }
 
-    // Check for existing username
-    const usernameExists = await User.findOne({ username });
-    if (usernameExists && usernameExists._id.toString() !== user_id) {
-      // Change: Use a custom error class for better organization
-      throw new CustomError('Username already exists', 400);
-    }
+      // Update user properties
+      user.username = username;
+      user.firstName = firstName;
+      user.lastName = lastName;
+      user.phone = mobile;
+      user.address = address;
+      user.profileImage = {
+        url: req.profileImageUrl, // Use the profile image URL from the request
+      };
 
-    // Update user properties
-    user.username = username;
-    user.firstName = firstName;
-    user.lastName = lastName;
-    user.phone = mobile;
-    user.address = address;
-    user.profileImage = {
-     
-      url: img.secure_url,
-    };
+      if (!user.userData) {
+        user.userData = [];
+      }
 
-    if (!user.userData) {
-      user.userData = [];
-    }
+      // Generate a new JWT token
+      const generatedToken = token(user.user_id);
 
-    // Generate a new JWT token
-    const generatedToken = token(user.user_id);
+      // Save the user with the new token
+      user.token = generatedToken;
+      await user.save();
 
-    // Save the user with the new token
-    user.token = generatedToken;
-    await user.save();
-
-    // Include the generated token in the response
-    res.status(200).json({
-      success: true,
-      message: 'User updated successfully',
-      data: {
-        user: {
-          user_id: user.user_id,
-          email:user.email,
-          username: user.username,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          mobile: user.phone,
-          address: user.address,
-          profileImage: user.profileImage,
-          token: generatedToken,
+      // Include the generated token in the response
+      res.status(200).json({
+        success: true,
+        message: 'User updated successfully',
+        data: {
+          user: {
+            user_id: user.user_id,
+            email: user.email,
+            username: user.username,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            mobile: user.phone,
+            address: user.address,
+            profileImage: user.profileImage,
+            token: generatedToken,
+          },
         },
-      },
-    });
-  } catch (error) {
-    console.error(error);
-    next(error); // Use next to pass the error to the error handling middleware
-  }
+      });
+    } catch (error) {
+      console.error(error);
+      next(error); // Use next to pass the error to the error handling middleware
+    }
+  });
 });
 
 
 
 
-
-//SignUP USer And send email
+//Register USer And send email
 const registerUser = asyncHandler(async (req, res, next) => {
   try {
     const { email, password, confirmPassword } = req.body;
@@ -657,4 +684,4 @@ const forgotPasswordToken = asyncHandler(async (req, res, next) => {
 });
 
 
-module.exports = {imageUpload ,registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,passPinVerification ,verifyEmail,createVerificationPin,verifyPin}
+module.exports = {userImageUpdate ,registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,passPinVerification ,verifyEmail,createVerificationPin,verifyPin}
