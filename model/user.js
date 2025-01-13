@@ -13,79 +13,74 @@ const userSchema = new Schema({
     type: String,
     default: () => `Klinner-${uuid.v4()}`, // Using a function to concatenate prefix and UUID
     unique: true,
-}, 
+  },
   username: {
     type: String,
-    unique:true,
+    unique: true,
     trim: true,
     minlength: 3,
     maxlength: 30,
   },
   email: {
     type: String,
-    
-    unique:true,
+
+    unique: true,
     trim: true,
     lowercase: true,
     match: /^\S+@\S+\.\S+$/,
   },
-  
+
   lastName: {
     type: String,
     trim: true,
-    
+
     maxlength: 100,
   },
   firstName: {
     type: String,
     trim: true,
-    
+
     maxlength: 100,
   },
 
   phone: {
     type: String,
-    
   },
   password: {
-    
     type: String,
     minlength: 6,
   },
   address: {
     type: String,
-    
   },
   profileImage: {
-    
     url: {
-      type: String
-    }
-  }
-,  
-
+      type: String,
+    },
+  },
+  refreshToken: {
+    type: String, // Store the refresh token in the database
+  },
   token: {
     type: String,
   },
   otp: {
     type: String,
-    
   },
   expiresAt: {
     type: Date,
   },
-  role:{
-    type:String,
-    default:"user",
+  role: {
+    type: String,
+    default: "user",
   },
-  isBlocked:{
-    type:Boolean,
-    default:false,
+  isBlocked: {
+    type: Boolean,
+    default: false,
   },
-  passwordChangeAt:Date,
-  verificationTokenExpires:Number,
-  passwordResetExpires:Date,
-  
+  passwordChangeAt: Date,
+  verificationTokenExpires: Number,
+  passwordResetExpires: Date,
 });
 
 //Encrypt incoming registered password
@@ -103,12 +98,6 @@ userSchema.methods.isPasswordMatched = async function (enteredPassword) {
   
 }
 
-// userSchema.methods.createPasswordRestToken = async function(){
-//   const resetToken = crypto.randomBytes(32).toString("hex");
-//   this.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest("hex");
-//   this.passwordResetExpires = Date.now()+30 *60*1000;//Expires in 10 minute
-//   return resetToken;
-// }
 
 userSchema.methods.createVerificationToken = async function () {
   // Generate a random 4-digit token

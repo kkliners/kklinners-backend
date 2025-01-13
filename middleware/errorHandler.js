@@ -11,7 +11,6 @@ const notFound = (req, res, next) => {
     res.status(statusCode).json({
       success: false,
       error: err.message || 'Internal Server Error',
-      details: err.details || null,
     });
   };
   

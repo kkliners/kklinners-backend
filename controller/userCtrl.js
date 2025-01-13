@@ -12,11 +12,13 @@ function generateOTP() {
   return otp;
 }
 class CustomError extends Error {
-  constructor(message) {
-      super(message);
-      this.name = 'CustomError';
+  constructor(message, statusCode = 500) {
+    super(message);
+    this.name = "CustomError";
+    this.statusCode = statusCode;
   }
 }
+
 
 const userImageUpdate = (req, res, next) => {
   upload.single('image')(req, res, async (multerErr) => {
@@ -185,7 +187,7 @@ const filldata = asyncHandler(async (req, res, next) => {
         },
       });
     } catch (error) {
-      console.error(error);
+     
       next(error); // Use next to pass the error to the error handling middleware
     }
   });
@@ -236,7 +238,7 @@ const registerUser = asyncHandler(async (req, res, next) => {
       throw new CustomError('User already exists', 400);
     }
   } catch (error) {
-    console.error(error);
+
     next(error); // Use next to pass the error to the error handling middleware
   }
 });
