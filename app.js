@@ -31,7 +31,7 @@ app.use('/api/v1/service',serviceRoute)
 
 //MidleWare Calling
 app.use(notFound)
-app.use(errorHandler)
+// app.use(errorHandler)
 
 
 ///////////////////////////////////////////////////////////////
