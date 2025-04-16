@@ -195,83 +195,132 @@ const filldata = asyncHandler(async (req, res, next) => {
 
 
 
-
-//Register USer And send email
+// Register User And send email
 const registerUser = asyncHandler(async (req, res, next) => {
   try {
-    const { email, password, confirmPassword } = req.body;
+    const { email, password, confirmPassword, username } = req.body;
+
+    // Validate required fields
+    if (!email || !password || !confirmPassword) {
+      const error = new Error('Please provide all required fields');
+      error.statusCode = 400;
+      throw error;
+    }
 
     if (password !== confirmPassword) {
-      // Change: Use a custom error class for better organization
-      throw new CustomError('Passwords do not match', 400);
+      const error = new Error('Passwords do not match');
+      error.statusCode = 400;
+      throw error;
     }
 
     delete req.body.confirmPassword;
 
-    const userExist = await User.findOne({ email });
-
-    if (!userExist) {
-      const newUser = await User.create(req.body);
-
-      // Generate and save OTP
-      const otp = generateOTP(); // Implement this function
-      newUser.otp = otp;
-      await newUser.save();
-
-      // Send verification email with OTP
-      const resetUrl = `Use this ${otp} to verify your email`;
-      const emailData = {
-        to: email,
-        subject: 'Verify Email',
-        text: `Use this ${otp} to verify your email`,
-        html: resetUrl,
-      };
-      await sendEmail(emailData, req, res);
-
-      res.status(201).json({
-        success: true,
-        message: 'User registered successfully. Verification email sent.',
-        data: newUser,
-      });
-    } else {
-      // Change: Use a custom error class for better organization
-      throw new CustomError('User already exists', 400);
+    // Check if user already exists by email
+    const userExistsByEmail = await User.findOne({ email });
+    if (userExistsByEmail) {
+      const error = new Error('User with this email already exists');
+      error.statusCode = 400;
+      throw error;
     }
-  } catch (error) {
 
-    next(error); // Use next to pass the error to the error handling middleware
+    // If username is provided, check if it's already taken
+    if (username) {
+      const userExistsByUsername = await User.findOne({ username });
+      if (userExistsByUsername) {
+        const error = new Error('Username is already taken');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+
+    // Create new user
+    const newUser = await User.create(req.body);
+
+    // Generate and save OTP
+    const otp = generateOTP(); // Implement this function
+    newUser.otp = otp;
+    await newUser.save();
+
+    // Send verification email with OTP
+    const resetUrl = `Use this ${otp} to verify your email`;
+    const emailData = {
+      to: email,
+      subject: 'Verify Email',
+      text: `Use this ${otp} to verify your email`,
+      html: resetUrl,
+    };
+    await sendEmail(emailData, req, res);
+
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully. Verification email sent.',
+      data: newUser,
+    });
+  } catch (error) {
+    // Handle MongoDB duplicate key errors
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      let message = '';
+      
+      // More specific error messages
+      if (field === 'email') {
+        message = 'User with this email already exists';
+      } else if (field === 'username') {
+        message = 'Username is already taken';
+      } else {
+        message = `This ${field} is already in use`;
+      }
+      
+      const duplicateError = new Error(message);
+      duplicateError.statusCode = 400;
+      return next(duplicateError);
+    }
+
+    next(error); // Pass other errors to the error handler
   }
 });
 
-
-
+// Verify Email Function
 const verifyEmail = asyncHandler(async (req, res, next) => {
-  const { email, otp } = req.body;
-
   try {
+    const { email, otp } = req.body;
+
+    // Validate required fields
+    if (!email || !otp) {
+      const error = new Error('Email and OTP are required');
+      error.statusCode = 400;
+      throw error;
+    }
+
     // Find the user by email
     const user = await User.findOne({ email });
 
-    // If the user doesn't exist, return a custom error
+    // If the user doesn't exist, return an error
     if (!user) {
-      throw new CustomError('User not found', 404);
+      const error = new Error('User not found');
+      error.statusCode = 404;
+      throw error;
     }
 
     // Check if the provided OTP matches the stored OTP
     if (user.otp !== otp) {
-      throw new CustomError('Invalid OTP', 400);
+      const error = new Error('Invalid OTP');
+      error.statusCode = 400;
+      throw error;
     }
 
     // Check if the OTP is still valid (not expired)
-    if (user.otp.expiresAt && user.otp.expiresAt < new Date()) {
-      throw new CustomError('Expired OTP', 400);
+    if (user.otp?.expiresAt && user.otp.expiresAt < new Date()) {
+      const error = new Error('OTP has expired. Please request a new one');
+      error.statusCode = 400;
+      throw error;
     }
 
     // Mark the email as verified
     user.isEmailVerified = true;
 
-    // Invalidate the OTP (mark it as used or remove it)
-    user.otp = undefined; // Adjust based on your schema
+    // Invalidate the OTP
+    user.otp = undefined; 
 
     // Save the updated user
     await user.save();
@@ -280,94 +329,135 @@ const verifyEmail = asyncHandler(async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Email verification successful',
-      data: user,
+      data: user
     });
   } catch (error) {
-    console.error(error);
-    next(error); // Use next to pass the error to the error handling middleware
+    next(error);
   }
 });
 
-
-// Login User
+// Login User Function
 const loginUser = asyncHandler(async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
-
-    if (user && (await user.isPasswordMatched(password))) {
-      // Generate a new JWT token
-      const generatedToken = token(user.user_id);
-
-      // Assign the generated token to the user object
-      user.token = generatedToken;
-
-      // Save the user document with the new token
-      await user.save();
-
-      res.status(200).json({
-        success: true,
-        message: 'Login successful',
-        data: {
-          user_id: user.user_id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          username:user.username,
-          phone: user.phone,
-          address: user.address,
-          profileImage:user.profileImage,
-          mobile: user.mobile,
-          role:user.role,
-          token: generatedToken,
-        },
-      });
-    } else {
-      // Provide a more specific error message for login credential issues
-      throw new CustomError('Incorrect email or password');
+    
+    // Validate required fields
+    if (!email || !password) {
+      const error = new Error('Email and password are required');
+      error.statusCode = 400;
+      throw error;
     }
-  } catch (error) {
-    console.error(error);
-    res.status(401).json({
-      success: false,
-      error: 'Unauthorized',
-      message: 'Incorrect email or password',
+    
+    // Find user by email
+    const user = await User.findOne({ email });
+    
+    // Check if user exists and password matches
+    if (!user || !(await user.isPasswordMatched(password))) {
+      const error = new Error('Invalid email or password');
+      error.statusCode = 401;
+      throw error;
+    }
+    
+    // Check if email is verified (if required by your application)
+    if (!user.isEmailVerified) {
+      const error = new Error('Please verify your email before logging in');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    // Generate a new JWT token
+    const generatedToken = token(user.user_id);
+
+    // Assign the generated token to the user object
+    user.token = generatedToken;
+
+    // Save the user document with the new token
+    await user.save();
+
+    // Return success response with user data
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      data: {
+        user_id: user.user_id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        username: user.username,
+        phone: user.phone,
+        address: user.address,
+        profileImage: user.profileImage,
+        mobile: user.mobile,
+        role: user.role,
+        token: generatedToken
+      }
     });
+  } catch (error) {
+    // Pass error to error handling middleware
+    next(error);
   }
 });
 
-// Get All User In DataBase
+// Get All Users Function
 const getAllUser = asyncHandler(async (req, res, next) => {
   try {
-    const users = await User.find();
+    // Implement pagination
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    
+    // Count total documents for pagination info
+    const totalUsers = await User.countDocuments();
+    
+    // Find users with pagination
+    const users = await User.find()
+      .select('-password -token -otp') // Exclude sensitive data
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 });
 
+    // Check if users exist
     if (!users || users.length === 0) {
-      throw new CustomError('Users not found', 404);
+      const error = new Error('No users found');
+      error.statusCode = 404;
+      throw error;
     }
 
+    // Return success response with users data and pagination info
     res.status(200).json({
       success: true,
       message: 'Users fetched successfully',
-      data: users,
+      count: users.length,
+      total: totalUsers,
+      totalPages: Math.ceil(totalUsers / limit),
+      currentPage: page,
+      data: users
     });
   } catch (error) {
-    console.error(error);
     next(error);
   }
 });
 
 
-//Create Verification pin
+// Create Verification Pin
 const createVerificationPin = asyncHandler(async (req, res, next) => {
-  const { user_id, pin } = req.body;
-
   try {
-    // Assuming you have a User model defined
-    const user = await User.findOne({user_id });
+    const { user_id, pin } = req.body;
+
+    // Validate required fields
+    if (!user_id || !pin) {
+      const error = new Error('User ID and PIN are required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Find the user
+    const user = await User.findOne({ user_id });
 
     if (!user) {
-      // Change: Use a custom error class for better organization
-      throw new CustomError('User does not exist', 403);
+      const error = new Error('User does not exist');
+      error.statusCode = 403;
+      throw error;
     }
 
     // Check if a pin already exists for the user
@@ -387,108 +477,130 @@ const createVerificationPin = asyncHandler(async (req, res, next) => {
     // Save the pin to the database
     await existingPin.save();
 
-    res.status(200).json({ success: true, message: 'Pin created/updated successfully' });
+    res.status(200).json({ 
+      success: true, 
+      message: 'PIN created/updated successfully' 
+    });
   } catch (error) {
-    console.error('Error saving pin:', error);
-    next(error); // Use next to pass the error to the error handling middleware
+    next(error);
   }
 });
 
-// Create a function to handle PIN verification
+// Verify PIN
 const verifyPin = asyncHandler(async (req, res, next) => {
-  const { user_id, pin } = req.body;
-
   try {
-    // Find the user with the provided user_id
+    const { user_id, pin } = req.body;
+
+    // Validate required fields
+    if (!user_id || !pin) {
+      const error = new Error('User ID and PIN are required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Find the user
     const user = await User.findOne({ user_id });
 
     if (!user) {
-      // Change: Use a custom error class for better organization
-      throw new CustomError('User does not exist', 403);
+      const error = new Error('User does not exist');
+      error.statusCode = 403;
+      throw error;
     }
 
     // Find the PIN for the user
     const storedPin = await Pin.findOne({ user_id });
 
     if (!storedPin) {
-      // Change: Use a custom error class for better organization
-      throw new CustomError('PIN not found for the user', 404);
+      const error = new Error('PIN not found for the user');
+      error.statusCode = 404;
+      throw error;
     }
 
     // Compare the provided PIN with the stored PIN
     if (pin === storedPin.pin) {
-      return res.status(200).json({ success: true, message: 'PIN verified successfully' ,data:pin});
+      return res.status(200).json({ 
+        success: true, 
+        message: 'PIN verified successfully',
+        data: pin
+      });
     } else {
-      // Change: Use a custom error class for better organization
-      throw new CustomError('Incorrect PIN', 403);
+      const error = new Error('Incorrect PIN');
+      error.statusCode = 403;
+      throw error;
     }
   } catch (error) {
-    console.error(error);
-    next(error); // Use next to pass the error to the error handling middleware
+    next(error);
   }
 });
 
-//Get Single User In DataBase
+// Get Single User
 const getUser = asyncHandler(async (req, res, next) => {
-  const { user_id } = req.params;
-
   try {
-    
+    const { user_id } = req.params;
 
-    const user = await User.findOne(user_id);
+    if (!user_id) {
+      const error = new Error('User ID is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const user = await User.findOne({ user_id }).select('-password -token -otp');
 
     if (!user) {
-      throw new CustomError('User not found', 404);
+      const error = new Error('User not found');
+      error.statusCode = 404;
+      throw error;
     }
 
     res.status(200).json({
       success: true,
       message: 'User fetched successfully',
-      data: user,
+      data: user
     });
   } catch (error) {
-    console.error(error);
     next(error);
   }
 });
 
-
-//Delete User
+// Delete User
 const deleteUser = asyncHandler(async (req, res, next) => {
-  const { user_id } = req.body;
-  console.log(req.body);
-
   try {
-    console.log(user_id)
-    // Check if user_id is undefined or null
+    const { user_id } = req.body;
+
     if (!user_id) {
-      throw new CustomError('Invalid user ID', 400);
+      const error = new Error('Invalid user ID');
+      error.statusCode = 400;
+      throw error;
     }
 
     const userDeleted = await User.findOneAndDelete({ user_id });
 
     if (!userDeleted) {
-      throw new CustomError(`User with ID ${user_id} not found`, 404);
+      const error = new Error(`User with ID ${user_id} not found`);
+      error.statusCode = 404;
+      throw error;
     }
 
-    console.log(`User with ID ${user_id} deleted`);
-    res.json({
+    res.status(200).json({
       success: true,
-      message: "User Deleted"
+      message: "User deleted successfully"
     });
   } catch (error) {
-    console.error(error);
-    next(error); // Use next to pass the error to the error handling middleware
+    next(error);
   }
 });
 
-
-
-//update User
+// Update User
 const updateUser = asyncHandler(async (req, res, next) => {
-  const { user_id } = req.user;
-
   try {
+    const { user_id } = req.user;
+
+    if (!user_id) {
+      const error = new Error('User ID is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
     const updateFields = {
       username: req.body.username,
       email: req.body.email,
@@ -498,192 +610,237 @@ const updateUser = asyncHandler(async (req, res, next) => {
       profileImage: req.body.profileImage,
     };
 
-    const userUpdated = await User.findOneAndUpdate( user_id , updateFields, {
-      new: true,
-    });
+    // Remove undefined fields
+    Object.keys(updateFields).forEach(key => 
+      updateFields[key] === undefined && delete updateFields[key]
+    );
 
-    if (!userUpdated) {
-      throw new CustomError(`User with ID ${user_id} not found`, 404);
+    if (Object.keys(updateFields).length === 0) {
+      const error = new Error('No fields to update');
+      error.statusCode = 400;
+      throw error;
     }
 
-    console.log(`User with ID ${user_id} Updated`);
+    const userUpdated = await User.findOneAndUpdate(
+      { user_id }, 
+      updateFields,
+      { new: true }
+    );
+
+    if (!userUpdated) {
+      const error = new Error(`User with ID ${user_id} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+
     res.status(200).json({
       success: true,
       message: 'User updated successfully',
-      data: userUpdated,
+      data: userUpdated
     });
   } catch (error) {
-    console.error(error);
-    next(error); // Use next to pass the error to the error handling middleware
+    next(error);
   }
 });
 
-
-//UnBlock User
+// Block User
 const blockUser = asyncHandler(async (req, res, next) => {
-  const { user_id } = req.params;
-  
-
   try {
-    const userblocked = await User.findOneAndUpdate(user_id, {
-      isBlocked: true,
-    }, {
-      new: true
-    });
+    const { user_id } = req.params;
 
-    if (!userblocked) {
-      // Change: Use a custom error class for better organization
-      throw new CustomError(`User with ID ${user_id} not found`, 404);
+    if (!user_id) {
+      const error = new Error('User ID is required');
+      error.statusCode = 400;
+      throw error;
     }
 
-    console.log(`User with ID ${user_id} blocked`);
-    res.json({success: true, message: 'User blocked',data:userblocked });
+    const userBlocked = await User.findOneAndUpdate(
+      { user_id },
+      { isBlocked: true },
+      { new: true }
+    );
+
+    if (!userBlocked) {
+      const error = new Error(`User with ID ${user_id} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+
+    res.status(200).json({
+      success: true, 
+      message: 'User blocked successfully',
+      data: userBlocked 
+    });
   } catch (error) {
-    console.error(error);
-    next(error); // Use next to pass the error to the error handling middleware
+    next(error);
   }
 });
 
-
-//UnBlock User
+// Unblock User
 const unBlockUser = asyncHandler(async (req, res, next) => {
-  const { user_id } = req.params;
-  
-
   try {
-    const userUnblocked = await User.findOneAndUpdate(user_id, {
-      isBlocked: false,
-    }, {
-      new: true
-    });
+    const { user_id } = req.params;
+
+    if (!user_id) {
+      const error = new Error('User ID is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const userUnblocked = await User.findOneAndUpdate(
+      { user_id },
+      { isBlocked: false },
+      { new: true }
+    );
 
     if (!userUnblocked) {
-      // Change: Use a custom error class for better organization
-      throw new CustomError(`User with ID ${user_id} not found`, 404);
+      const error = new Error(`User with ID ${user_id} not found`);
+      error.statusCode = 404;
+      throw error;
     }
 
-    console.log(`User with ID ${user_id} unblocked`);
-    res.json({success: true, message: 'User Unblocked',data:userUnblocked });
+    res.status(200).json({
+      success: true, 
+      message: 'User unblocked successfully',
+      data: userUnblocked 
+    });
   } catch (error) {
-    console.error(error);
-    next(error); // Use next to pass the error to the error handling middleware
+    next(error);
   }
 });
 
-
-
-//
-
-const passPinVerification = asyncHandler(async(req,res)=>{
-  const { email, pin } = req.body;
-
-  // Validate request parameters
-  if (!email || !pin) {
-    return res.status(400).json({ success: false, error: 'Email and PIN are required' });
-  }
-
+// Verify PIN for Password Reset
+const passPinVerification = asyncHandler(async (req, res, next) => {
   try {
+    const { email, pin } = req.body;
+
+    // Validate required fields
+    if (!email || !pin) {
+      const error = new Error('Email and PIN are required');
+      error.statusCode = 400;
+      throw error;
+    }
+
     // Find the user by email
-    const user = await User.findOne( {email} );
-    console.log(user.verificationTokenExpires)
+    const user = await User.findOne({ email });
     
     if (!user) {
-      return res.status(404).json({ success: false, error: 'User not found' });
+      const error = new Error('User not found');
+      error.statusCode = 404;
+      throw error;
     }
-    console.log('this worked')
+
     // Check if the provided PIN matches the stored PIN
     if (pin != user.verificationTokenExpires) {
-      return res.status(401).json({ success: false, error: 'Incorrect PIN' });
-    };
+      const error = new Error('Incorrect PIN');
+      error.statusCode = 401;
+      throw error;
+    }
 
     // Check if the PIN has expired
     const currentTimestamp = Date.now();
     if (user.passwordResetExpires && currentTimestamp > user.passwordResetExpires) {
-      return res.status(401).json({ success: false, error: 'PIN has expired' });
+      const error = new Error('PIN has expired');
+      error.statusCode = 401;
+      throw error;
     }
 
-    // PIN is correct, you can implement further actions here
-
-    // For demonstration purposes, let's send a success response
-    return res.status(200).json({ success: true, message: 'PIN verification successful' });
+    res.status(200).json({ 
+      success: true, 
+      message: 'PIN verification successful' 
+    });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ success: false, error: 'Internal Server Error' });
-  }
-}) 
-
-const changePassword = asyncHandler(async (req, res, next) => {
-  try {
-    // Assuming you want to get the new password and email from the request body
-    const { email, password, confirmPassword } = req.body;
-
-    if (password !== confirmPassword) {
-      return res.status(400).json({
-        success: false,
-        error: 'Passwords do not match',
-      });
-    }
-
-    delete req.body.confirmPassword;
-    // Find the user in the database based on the email
-    const user = await User.findOne({ email });
-
-    // If the user is not found, throw a custom error
-    if (!user) {
-      throw new CustomError('User not found', 404);
-    }
-
-    // Update the password if a new one is provided
-    if (password) {
-      user.password = password;
-      const updatedUser = await user.save();
-      res.json({ success: 'True', message: 'Password changed', data:updatedUser });
-    } else {
-      // If password is not provided, throw a custom error
-      throw new CustomError('Password not provided', 400);
-    }
-  } catch (error) {
-    console.error(error);
-    next(new CustomError('Internal Server Error', 500));
+    next(error);
   }
 });
 
+// Change Password
+const changePassword = asyncHandler(async (req, res, next) => {
+  try {
+    const { email, password, confirmPassword } = req.body;
+
+    // Validate required fields
+    if (!email || !password || !confirmPassword) {
+      const error = new Error('Email, password, and confirm password are required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (password !== confirmPassword) {
+      const error = new Error('Passwords do not match');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Find the user in the database based on the email
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      const error = new Error('User not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Update the password
+    user.password = password;
+    const updatedUser = await user.save();
+    
+    res.status(200).json({ 
+      success: true, 
+      message: 'Password changed successfully', 
+      data: updatedUser 
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Forgot Password
 const forgotPasswordToken = asyncHandler(async (req, res, next) => {
   try {
     const { email } = req.body;
 
-    console.log('Received request for email:', email);
+    if (!email) {
+      const error = new Error('Email is required');
+      error.statusCode = 400;
+      throw error;
+    }
 
     // Find the user based on the provided email
     const user = await User.findOne({ email });
 
-    // If the user is not found, throw a custom error
     if (!user) {
-      throw new CustomError(`User with ${email} not found`, 404);
+      const error = new Error(`User with email ${email} not found`);
+      error.statusCode = 404;
+      throw error;
     }
 
-    console.log(user);
+    // Create verification token
     const token = await user.createVerificationToken();
-    await user.save(); 
-    const resetUrl = `Hi, please follow this link to reset your password. This token is valid for 10 minutes ${token}`;
+    await user.save();
+    
+    // Prepare email content
+    const resetUrl = `Hi, please follow this link to reset your password. This token is valid for 10 minutes: ${token}`;
     const emailData = {
       to: email,
       subject: 'Forgot Password',
       text: 'hey user',
-      htm: resetUrl,
+      html: resetUrl,
     };
-    await sendEmail(emailData, req, res); // pass the data to email create
-    return res.status(200).json({
+    
+    // Send email
+    await sendEmail(emailData, req, res);
+    
+    res.status(200).json({
       success: true,
       message: 'Password verification pin sent successfully',
-      data: { token: token}, // Replace 'your_token_value' with the actual token
+      data: { token }
     });
-;
   } catch (error) {
-    console.error(error);
-    next(new CustomError('Internal Server Error', 500));
+    next(error);
   }
 });
+
 
 
 module.exports = {userImageUpdate ,registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,passPinVerification ,verifyEmail,createVerificationPin,verifyPin}
