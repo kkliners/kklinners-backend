@@ -340,30 +340,51 @@ const verifyEmail = asyncHandler(async (req, res, next) => {
 const loginUser = asyncHandler(async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    
+
     // Validate required fields
     if (!email || !password) {
-      const error = new Error('Email and password are required');
-      error.statusCode = 400;
-      throw error;
+      return res.status(400).json({
+        success: false,
+        error: "Email and password are required",
+      });
     }
-    
+console.log(email)
     // Find user by email
     const user = await User.findOne({ email });
-    
-    // Check if user exists and password matches
-    if (!user || !(await user.isPasswordMatched(password))) {
-      const error = new Error('Invalid email or password');
-      error.statusCode = 401;
-      throw error;
+
+    // Check if user exists
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: "Invalid email or password",
+      });
     }
-    
-    // Check if email is verified (if required by your application)
-    if (!user.isEmailVerified) {
-      const error = new Error('Please verify your email before logging in');
-      error.statusCode = 403;
-      throw error;
+console.log('passed')
+    // Check if password matches
+    const isPasswordMatch = await user.isPasswordMatched(password);
+    if (!isPasswordMatch) {
+      return res.status(401).json({
+        success: false,
+        error: "Invalid email or password",
+      });
     }
+console.log("passed2")
+    // Check if email is verified
+    // if (!user.isEmailVerified) {
+    //   // Generate verification token using your existing method
+    //   const verificationToken = await user.createVerificationToken();
+    //   await user.save();
+
+    //   // Optional: Send verification email again
+    //   // await sendVerificationEmail(user.email, verificationToken);
+
+    //   return res.status(403).json({
+    //     success: false,
+    //     error: "Please verify your email before logging in",
+    //     isEmailVerificationRequired: true,
+    //     userId: user.user_id, // Include userId for frontend verification flow
+    //   });
+    // }
 
     // Generate a new JWT token
     const generatedToken = token(user.user_id);
@@ -375,9 +396,9 @@ const loginUser = asyncHandler(async (req, res, next) => {
     await user.save();
 
     // Return success response with user data
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: 'Login successful',
+      message: "Login successful",
       data: {
         user_id: user.user_id,
         firstName: user.firstName,
@@ -389,16 +410,21 @@ const loginUser = asyncHandler(async (req, res, next) => {
         profileImage: user.profileImage,
         mobile: user.mobile,
         role: user.role,
-        token: generatedToken
-      }
+        token: generatedToken,
+      },
     });
   } catch (error) {
-    // Pass error to error handling middleware
-    next(error);
+    console.error("Login error:", error);
+
+    // Handle error directly
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      error: error.message || "An error occurred during login",
+    });
   }
 });
 
-// Get All Users Function
+// Get All Users Functio
 const getAllUser = asyncHandler(async (req, res, next) => {
   try {
     // Implement pagination
