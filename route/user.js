@@ -1,7 +1,17 @@
 const express = require('express')
 const route = express.Router()
 const {authMiddleware,isAdmin} =require('../middleware/authMiddleware')
-const {getAllUser,getUser, deleteUser, updateUser,blockUser,unBlockUser,createVerificationPin,verifyPin} = require('../controller/userCtrl')
+const {
+  getAllUser,
+  filldata,
+  getUser,
+  deleteUser,
+  updateUser,
+  blockUser,
+  unBlockUser,
+  createVerificationPin,
+  verifyPin,
+} = require("../controller/userCtrl");
 //Register User;
 //username,email,password,confirm-password;
 const {getUserServices}= require('../controller/bookingCtrl')
@@ -14,5 +24,5 @@ route.put('/unblock-user/:id',isAdmin,authMiddleware,unBlockUser)
 route.post('/create-pin',isAdmin,authMiddleware,createVerificationPin)
 route.get('/services/:user_id',authMiddleware,getUserServices)
 route.post('/verify-pin',isAdmin,authMiddleware,verifyPin)
-
+route.post('/fill-data', filldata)
 module.exports = route;
