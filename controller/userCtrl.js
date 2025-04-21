@@ -369,23 +369,7 @@ console.log('passed')
       });
     }
 console.log("passed2")
-    // Check if email is verified
-    // if (!user.isEmailVerified) {
-    //   // Generate verification token using your existing method
-    //   const verificationToken = await user.createVerificationToken();
-    //   await user.save();
-
-    //   // Optional: Send verification email again
-    //   // await sendVerificationEmail(user.email, verificationToken);
-
-    //   return res.status(403).json({
-    //     success: false,
-    //     error: "Please verify your email before logging in",
-    //     isEmailVerificationRequired: true,
-    //     userId: user.user_id, // Include userId for frontend verification flow
-    //   });
-    // }
-
+  
     // Generate a new JWT token
     const generatedToken = token(user.user_id);
 
