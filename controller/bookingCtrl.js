@@ -180,7 +180,8 @@ const createCleaningService = async (req, res, next) => {
       bookingTime,
       location,
     } = req.body;
-console.log(user_id)
+console.log("Request Body:", req.body);
+    console.log("User ID:", user_id);
     // Validate input
     if (
       !user_id ||
@@ -263,6 +264,71 @@ console.log(user_id)
     next(error);
   }
 };
+
+
+const verifyPayment = async (req, res, next) => {
+  try {
+    const { reference } = req.body;
+
+    if (!reference) {
+      return res.status(400).json({
+        success: false,
+        message: "Transaction reference is required",
+      });
+    }
+
+    // Verify payment with Paystack
+    const response = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      {
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const paymentData = response.data.data;
+
+    if (paymentData.status !== "success") {
+      return res.status(400).json({
+        success: false,
+        message: "Payment not successful",
+      });
+    }
+
+    // Find the service linked to this payment reference
+    const service = await Service.findOne({
+      "booking.payment.reference": reference,
+    });
+
+    if (!service) {
+      return res.status(404).json({
+        success: false,
+        message: "Service not found for this transaction",
+      });
+    }
+
+    // Update payment status
+    service.booking.paymentStatus = "paid";
+    await service.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment verified successfully",
+      data: service,
+    });
+  } catch (error) {
+    console.error("Verify Payment Error:", error.message || error);
+    next(error);
+  }
+};
+
+
+
+
+
+
 // Get all User's Service
 const getUserServices = asyncHandler(async (req, res, next) => {
   const user_id = req.params.user_id;
@@ -470,4 +536,5 @@ module.exports = {
   getUserUpcomingServices,
   getUserPendingServices,
   markTaskCompleted,
+  verifyPayment,
 };

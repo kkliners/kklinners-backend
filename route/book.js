@@ -1,12 +1,27 @@
 const express = require('express')
 const route = express.Router()
 const {authMiddleware,isAdmin} =require('../middleware/authMiddleware')
-const {createCleaningService,getSingleService,paystackPayment,cancelService,userCancelledServices,getAllCompletedServices,getAllUpcomingServices,getAllPendingServices,getUserCompletedServices,getUserUpcomingServices,getUserPendingServices,markTaskCompleted}=require('../controller/bookingCtrl')
+const {
+  createCleaningService,
+  verifyPayment,getSingleService,
+  paystackPayment,
+  cancelService,
+  userCancelledServices,
+  getAllCompletedServices,
+  getAllUpcomingServices,
+  getAllPendingServices,
+  getUserCompletedServices,
+  getUserUpcomingServices,
+  getUserPendingServices,
+  markTaskCompleted,
+} = require("../controller/bookingCtrl");
 
 // Create a new cleaning service
 route.post('/create-service',authMiddleware, createCleaningService);
 // Process payment via Paystack
 route.post('/paystack',authMiddleware, paystackPayment);
+route.post("/verify-payment", verifyPayment);
+
 // Get details of a specific service for a user
 route.get('/:user_id/services/:service_id',authMiddleware, getSingleService);
 // Cancel a specific service
