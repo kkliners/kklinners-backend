@@ -72,93 +72,6 @@ const paystackPayment = asyncHandler(async (req, res, next) => {
   }
 });
 
-// const createCleaningService = asyncHandler(async (req, res, next) => {
-//   try {
-//     const {
-//       user_id,
-//       serviceName,
-//       serviceCategory,
-//       areas,
-//       bookingDate,
-//       bookingTime,
-//       location,
-//     } = req.body;
-//     const paymentStatus = "pending";
-
-//     // Check if the payment status is successful
-//     if (paymentStatus !== "pending") {
-//       throw new PaymentError("Payment unsuccessful");
-//     }
-
-//     const user = await User.findOne({ user_id });
-
-//     if (!user) {
-//       throw new CustomError("User not found", 404);
-//     }
-
-//     // Calculate the service rate based on the selected areas
-//     const serviceRate = calculateServiceRate(areas);
-
-//     // Call Paystack to get the payment link
-//     const paymentResponse = await initiatePaystackPayment(
-//       user.email,
-//       serviceRate * 100
-//     ); // Convert to kobo
-
-//     if (paymentResponse.status && paymentResponse.data) {
-//       const { authorization_url, access_code, reference } =
-//         paymentResponse.data;
-
-//       // Create a new CleaningService instance
-//       const newCleaningService = new Service({
-//         user_id: user.user_id,
-//         serviceName,
-//         serviceCategory,
-//         areas,
-//         serviceRate,
-//         booking: {
-//           bookingDate,
-//           bookingTime,
-//           location,
-//           paymentStatus,
-//           payment: {
-//             authorization_url,
-//             access_code,
-//             reference,
-//           },
-//         },
-//         // other fields as needed
-//       });
-
-//       // Save the new cleaning service to the database
-//       await newCleaningService.save();
-
-//       // Respond with the success message, cleaning service details, and payment information
-//       return sendResponse(
-//         res,
-//         201,
-//         true,
-//         "Cleaning service created and booked successfully",
-//         {
-//           cleaningService: newCleaningService,
-//           payment: {
-//             authorization_url,
-//             access_code,
-//             reference,
-//           },
-//         }
-//       );
-//     } else {
-//       throw new CustomError("Internal Server Error", 500);
-//     }
-//   } catch (error) {
-//     // Handle custom errors
-//     if (error instanceof PaymentError) {
-//       return sendResponse(res, error.statusCode, false, error.message, null);
-//     }
-//     next(error);
-//   }
-// });
 
 
 
@@ -537,4 +450,5 @@ module.exports = {
   getUserPendingServices,
   markTaskCompleted,
   verifyPayment,
+  
 };

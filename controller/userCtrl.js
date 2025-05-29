@@ -19,23 +19,43 @@ class CustomError extends Error {
   }
 }
 
-
-const userImageUpdate = (req, res, next) => {
-  upload.single('image')(req, res, async (multerErr) => {
+const userImageUpdate = asyncHandler(async (req, res, next) => {
+  upload.single("image")(req, res, async (multerErr) => {
     if (multerErr) {
       // Handle multer upload error
       return next(multerErr);
     }
 
     try {
-      // Generate a unique identifier (demo: timestamp + random number)
-      const uniqueIdentifier = `${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      // Get user_id from the authenticated user (from cookie token)
+      const user_id = req.user.user_id;
+
+      if (!user_id) {
+        throw new CustomError("User ID not found in token", 401);
+      }
+
+      // Check if image was uploaded
+      if (!req.file) {
+        throw new CustomError("No image file uploaded", 400);
+      }
+
+      // Find the user
+      const user = await User.findOne({ user_id });
+
+      if (!user) {
+        throw new CustomError("User not found", 404);
+      }
+
+      // Generate a unique identifier for Cloudinary
+      const uniqueIdentifier = `${Date.now()}_${Math.floor(
+        Math.random() * 1000
+      )}`;
 
       // Create a promise for Cloudinary upload
       const cloudinaryUpload = () =>
         new Promise((resolve, reject) => {
           const uploadStream = cloudinary.uploader.upload_stream(
-            { public_id: uniqueIdentifier, folder: 'profileImage' },
+            { public_id: uniqueIdentifier, folder: "profileImage" },
             (err, result) => {
               if (err) {
                 reject(err);
@@ -52,26 +72,36 @@ const userImageUpdate = (req, res, next) => {
       // Upload to Cloudinary using the promise
       const cloudinaryResult = await cloudinaryUpload();
 
-      // Extract the HTTP URL (url) property
+      // Extract the HTTP URL
       const httpUrl = cloudinaryResult.url;
 
-      // Respond with the extracted HTTP URL
-      res.status(201).json({
+      // Update user's profile image in database
+      user.profileImage = {
+        url: httpUrl,
+      };
+
+      await user.save();
+
+      // Respond with success and updated user profile
+      res.status(200).json({
         success: true,
-        message: 'User image uploaded successfully.',
-        data: { url: httpUrl },
+        message: "Profile image updated successfully",
+        data: {
+          user_id: user.user_id,
+          profileImage: {
+            url: httpUrl,
+          },
+          imageUrl: httpUrl,
+        },
       });
-    } catch (cloudinaryErr) {
-      // Handle Cloudinary upload error
-      console.error('Cloudinary upload error:', cloudinaryErr);
-      return res.status(400).json({
-        success: false,
-        error: 'Image upload fails',
-        details: null,
-      });
+    } catch (error) {
+      // Handle any errors
+      console.error("Image upload error:", error);
+      next(error);
     }
   });
-};
+});
+
 
 //Middleware that get called in signup for userImageUpdate
 const uploadProfileImage = (req, res, next) => {
@@ -123,75 +153,195 @@ const uploadProfileImage = (req, res, next) => {
   });
 };
 
-const filldata = asyncHandler(async (req, res, next) => {
+
+const uploadImage = asyncHandler(async (req, res, next) => {
   // Call uploadProfileImage middleware to handle image upload
   uploadProfileImage(req, res, async () => {
-    const { user_id } = req.body;
-
     try {
+      // Get user_id from the authenticated user (set by authMiddleware)
+      const user_id = req.user.user_id;
+
+      if (!user_id) {
+        throw new CustomError("User ID not found in token", 401);
+      }
+
+      // Check if image was uploaded
+      if (!req.profileImageUrl) {
+        throw new CustomError("No image uploaded", 400);
+      }
+
+      // Find the user
       const user = await User.findOne({ user_id });
 
       if (!user) {
-        throw new CustomError('User not found', 404);
+        throw new CustomError("User not found", 404);
       }
 
-      // Validate required fields
-      const { username, firstName, lastName, mobile, address } = req.body;
-      if (!username || !firstName || !lastName || !mobile || !address) {
-        throw new CustomError('All fields are required', 400);
-      }
-
-      // Check for existing username
-      const usernameExists = await User.findOne({ username });
-      if (usernameExists && usernameExists._id.toString() !== user_id) {
-        throw new CustomError('Username already exists', 400);
-      }
-
-      // Update user properties
-      user.username = username;
-      user.firstName = firstName;
-      user.lastName = lastName;
-      user.phone = mobile;
-      user.address = address;
+      // Update only the profile image
       user.profileImage = {
-        url: req.profileImageUrl, // Use the profile image URL from the request
+        url: req.profileImageUrl,
       };
 
-      if (!user.userData) {
-        user.userData = [];
-      }
-
-      // Generate a new JWT token
-      const generatedToken = token(user.user_id);
-
-      // Save the user with the new token
-      user.token = generatedToken;
       await user.save();
 
-      // Include the generated token in the response
+      // Return success response
       res.status(200).json({
         success: true,
-        message: 'User updated successfully',
+        message: "Profile image uploaded successfully",
         data: {
-          user: {
-            user_id: user.user_id,
-            email: user.email,
-            username: user.username,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            mobile: user.phone,
-            address: user.address,
-            profileImage: user.profileImage,
-            token: generatedToken,
-          },
+          user_id: user.user_id,
+          profileImage: user.profileImage,
+          imageUrl: req.profileImageUrl,
         },
       });
     } catch (error) {
-     
-      next(error); // Use next to pass the error to the error handling middleware
+      next(error);
     }
   });
 });
+
+const filldata = asyncHandler(async (req, res, next) => {
+  try {
+    // Get user_id from the authenticated user (set by authMiddleware)
+    const user_id = req.user.user_id; // or req.user.id depending on your token structure
+    console.log("Request body:", req.body); // Debug payload
+    console.log("User from token:", req.user); // Debug auth
+    if (!user_id) {
+      throw new CustomError("User ID not found in token", 401);
+    }
+
+    const user = await User.findOne({ user_id });
+
+    if (!user) {
+      throw new CustomError("User not found", 404);
+    }
+
+    // Validate required fields
+    const { username, firstName, lastName, mobile, address } = req.body;
+    if (!username || !firstName || !lastName || !mobile || !address) {
+      throw new CustomError("All fields are required", 400);
+    }
+
+    // Check for existing username (exclude current user)
+    const usernameExists = await User.findOne({
+      username,
+      user_id: { $ne: user_id }, // Exclude current user from username check
+    });
+
+    if (usernameExists) {
+      throw new CustomError("Username already exists", 400);
+    }
+
+    // Update user properties
+    user.username = username;
+    user.firstName = firstName;
+    user.lastName = lastName;
+    user.phone = mobile;
+    user.address = address;
+
+    if (!user.userData) {
+      user.userData = [];
+    }
+
+    // Generate a new JWT token
+    const generatedToken = token(user.user_id);
+
+    // Save the user with the new token
+    user.token = generatedToken;
+    await user.save();
+
+    // Include the generated token in the response
+    res.status(200).json({
+      success: true,
+      message: "User updated successfully",
+      data: {
+        user_id: user.user_id,
+        email: user.email,
+        username: user.username,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        address: user.address,
+
+        token: generatedToken,
+      },
+    });
+  } catch (error) {
+    next(error); // Use next to pass the error to the error handling middleware
+  }
+});
+
+
+
+// const filldata = asyncHandler(async (req, res, next) => {
+//   // Call uploadProfileImage middleware to handle image upload
+//   uploadProfileImage(req, res, async () => {
+//     const { user_id } = req.body;
+
+//     try {
+//       const user = await User.findOne({ user_id });
+
+//       if (!user) {
+//         throw new CustomError('User not found', 404);
+//       }
+
+//       // Validate required fields
+//       const { username, firstName, lastName, mobile, address } = req.body;
+//       if (!username || !firstName || !lastName || !mobile || !address) {
+//         throw new CustomError('All fields are required', 400);
+//       }
+
+//       // Check for existing username
+//       const usernameExists = await User.findOne({ username });
+//       if (usernameExists && usernameExists._id.toString() !== user_id) {
+//         throw new CustomError('Username already exists', 400);
+//       }
+
+//       // Update user properties
+//       user.username = username;
+//       user.firstName = firstName;
+//       user.lastName = lastName;
+//       user.phone = mobile;
+//       user.address = address;
+//       user.profileImage = {
+//         url: req.profileImageUrl, // Use the profile image URL from the request
+//       };
+
+//       if (!user.userData) {
+//         user.userData = [];
+//       }
+
+//       // Generate a new JWT token
+//       const generatedToken = token(user.user_id);
+
+//       // Save the user with the new token
+//       user.token = generatedToken;
+//       await user.save();
+
+//       // Include the generated token in the response
+//       res.status(200).json({
+//         success: true,
+//         message: 'User updated successfully',
+//         data: {
+//           user: {
+//             user_id: user.user_id,
+//             email: user.email,
+//             username: user.username,
+//             firstName: user.firstName,
+//             lastName: user.lastName,
+//             mobile: user.phone,
+//             address: user.address,
+//             profileImage: user.profileImage,
+//             token: generatedToken,
+//           },
+//         },
+//       });
+//     } catch (error) {
+     
+//       next(error); // Use next to pass the error to the error handling middleware
+//     }
+//   });
+// });
 
 
 
@@ -546,26 +696,13 @@ const verifyPin = asyncHandler(async (req, res, next) => {
 // Get Single User
 const getUser = asyncHandler(async (req, res, next) => {
   try {
-    const { user_id } = req.params;
-
-    if (!user_id) {
-      const error = new Error('User ID is required');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const user = await User.findOne({ user_id }).select('-password -token -otp');
-
-    if (!user) {
-      const error = new Error('User not found');
-      error.statusCode = 404;
-      throw error;
-    }
+    // User data is already fetched by authMiddleware
+    const user = req.user;
 
     res.status(200).json({
       success: true,
-      message: 'User fetched successfully',
-      data: user
+      message: "User fetched successfully",
+      data: user,
     });
   } catch (error) {
     next(error);
@@ -853,4 +990,21 @@ const forgotPasswordToken = asyncHandler(async (req, res, next) => {
 
 
 
-module.exports = {userImageUpdate ,registerUser,loginUser,getAllUser,getUser,deleteUser,updateUser,filldata,blockUser,unBlockUser,changePassword,forgotPasswordToken,passPinVerification ,verifyEmail,createVerificationPin,verifyPin}
+module.exports = {
+  userImageUpdate,
+  registerUser,
+  loginUser,
+  getAllUser,
+  getUser,
+  deleteUser,
+  updateUser,
+  filldata,
+  blockUser,
+  unBlockUser,
+  changePassword,
+  forgotPasswordToken,
+  passPinVerification,
+  verifyEmail,
+  createVerificationPin,
+  verifyPin,
+};
