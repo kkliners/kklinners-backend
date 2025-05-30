@@ -154,58 +154,59 @@ const uploadProfileImage = (req, res, next) => {
 };
 
 
-const uploadImage = asyncHandler(async (req, res, next) => {
-  // Call uploadProfileImage middleware to handle image upload
-  uploadProfileImage(req, res, async () => {
-    try {
-      // Get user_id from the authenticated user (set by authMiddleware)
-      const user_id = req.user.user_id;
+// const uploadImage = asyncHandler(async (req, res, next) => {
+//   // Call uploadProfileImage middleware to handle image upload
+//   uploadProfileImage(req, res, async () => {
+//     try {
+//       // Get user_id from the authenticated user (set by authMiddleware)
+//       const user_id = req.user.user_id;
 
-      if (!user_id) {
-        throw new CustomError("User ID not found in token", 401);
-      }
+//       if (!user_id) {
+//         throw new CustomError("User ID not found in token", 401);
+//       }
 
-      // Check if image was uploaded
-      if (!req.profileImageUrl) {
-        throw new CustomError("No image uploaded", 400);
-      }
+//       // Check if image was uploaded
+//       if (!req.profileImageUrl) {
+//         throw new CustomError("No image uploaded", 400);
+//       }
 
-      // Find the user
-      const user = await User.findOne({ user_id });
+//       // Find the user
+//       const user = await User.findOne({ user_id });
 
-      if (!user) {
-        throw new CustomError("User not found", 404);
-      }
+//       if (!user) {
+//         throw new CustomError("User not found", 404);
+//       }
 
-      // Update only the profile image
-      user.profileImage = {
-        url: req.profileImageUrl,
-      };
+//       // Update only the profile image
+//       user.profileImage = {
+//         url: req.profileImageUrl,
+//       };
 
-      await user.save();
+//       await user.save();
 
-      // Return success response
-      res.status(200).json({
-        success: true,
-        message: "Profile image uploaded successfully",
-        data: {
-          user_id: user.user_id,
-          profileImage: user.profileImage,
-          imageUrl: req.profileImageUrl,
-        },
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-});
+//       // Return success response
+//       res.status(200).json({
+//         success: true,
+//         message: "Profile image uploaded successfully",
+//         data: {
+//           user_id: user.user_id,
+//           profileImage: user.profileImage,
+//           imageUrl: req.profileImageUrl,
+//         },
+//       });
+//     } catch (error) {
+//       next(error);
+//     }
+//   });
+// });
 
 const filldata = asyncHandler(async (req, res, next) => {
   try {
     // Get user_id from the authenticated user (set by authMiddleware)
-    const user_id = req.user.user_id; // or req.user.id depending on your token structure
-    console.log("Request body:", req.body); // Debug payload
-    console.log("User from token:", req.user); // Debug auth
+    const user_id = req.user.user_id;
+    console.log("=== FILLDATA STRICT VALIDATION ===");
+    console.log("Request body:", req.body);
+
     if (!user_id) {
       throw new CustomError("User ID not found in token", 401);
     }
@@ -216,28 +217,147 @@ const filldata = asyncHandler(async (req, res, next) => {
       throw new CustomError("User not found", 404);
     }
 
-    // Validate required fields
-    const { username, firstName, lastName, mobile, address } = req.body;
-    if (!username || !firstName || !lastName || !mobile || !address) {
-      throw new CustomError("All fields are required", 400);
+    // Extract ALL required fields from request body
+    const { username, firstName, lastName, mobile, address, city, state } =
+      req.body;
+
+    // STRICT VALIDATION: ALL FIELDS ARE REQUIRED
+    const requiredFields = {
+      username: username,
+      firstName: firstName,
+      lastName: lastName,
+      mobile: mobile,
+      address: address,
+      city: city,
+      state: state,
+    };
+
+    // Check for missing or empty fields
+    const missingFields = [];
+    const emptyFields = [];
+
+    for (const [fieldName, fieldValue] of Object.entries(requiredFields)) {
+      if (fieldValue === undefined || fieldValue === null) {
+        missingFields.push(fieldName);
+      } else if (typeof fieldValue === "string" && fieldValue.trim() === "") {
+        emptyFields.push(fieldName);
+      }
+    }
+
+    // Throw error if any field is missing or empty
+    if (missingFields.length > 0) {
+      throw new CustomError(
+        `Missing required fields: ${missingFields.join(", ")}`,
+        400
+      );
+    }
+
+    if (emptyFields.length > 0) {
+      throw new CustomError(
+        `Empty required fields: ${emptyFields.join(", ")}`,
+        400
+      );
+    }
+
+    console.log("✅ All required fields validated successfully");
+
+    // Trim all string fields
+    const trimmedData = {
+      username: username.trim(),
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      mobile: mobile.trim(),
+      address: address.trim(),
+      city: city.trim(),
+      state: state.trim(),
+    };
+
+    console.log("Trimmed data:", trimmedData);
+
+    // Additional validation for specific fields
+    if (trimmedData.username.length < 3 || trimmedData.username.length > 30) {
+      throw new CustomError(
+        "Username must be between 3 and 30 characters",
+        400
+      );
+    }
+
+    if (trimmedData.firstName.length > 100) {
+      throw new CustomError("First name cannot exceed 100 characters", 400);
+    }
+
+    if (trimmedData.lastName.length > 100) {
+      throw new CustomError("Last name cannot exceed 100 characters", 400);
+    }
+
+    if (trimmedData.city.length > 100) {
+      throw new CustomError("City name cannot exceed 100 characters", 400);
+    }
+
+    if (trimmedData.state.length > 100) {
+      throw new CustomError("State name cannot exceed 100 characters", 400);
     }
 
     // Check for existing username (exclude current user)
     const usernameExists = await User.findOne({
-      username,
-      user_id: { $ne: user_id }, // Exclude current user from username check
+      username: trimmedData.username,
+      user_id: { $ne: user_id },
     });
 
     if (usernameExists) {
       throw new CustomError("Username already exists", 400);
     }
 
-    // Update user properties
-    user.username = username;
-    user.firstName = firstName;
-    user.lastName = lastName;
-    user.phone = mobile;
-    user.address = address;
+    console.log("=== UPDATING USER FIELDS ===");
+
+    // Store original values for comparison
+    const originalData = {
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      address: user.address,
+      city: user.city,
+      state: user.state,
+    };
+
+    // Update user properties with trimmed data
+    user.username = trimmedData.username;
+    user.firstName = trimmedData.firstName;
+    user.lastName = trimmedData.lastName;
+    user.phone = trimmedData.mobile;
+    user.address = trimmedData.address;
+    user.city = trimmedData.city;
+    user.state = trimmedData.state;
+
+    console.log("=== BEFORE SAVE VERIFICATION ===");
+    console.log("user.username:", user.username);
+    console.log("user.firstName:", user.firstName);
+    console.log("user.lastName:", user.lastName);
+    console.log("user.phone:", user.phone);
+    console.log("user.address:", user.address);
+    console.log("user.city:", user.city);
+    console.log("user.state:", user.state);
+
+    // Verify all fields are set correctly before saving
+    const fieldsToVerify = {
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      address: user.address,
+      city: user.city,
+      state: user.state,
+    };
+
+    for (const [fieldName, fieldValue] of Object.entries(fieldsToVerify)) {
+      if (!fieldValue || fieldValue.trim() === "") {
+        throw new CustomError(
+          `Field ${fieldName} is empty after assignment`,
+          500
+        );
+      }
+    }
 
     if (!user.userData) {
       user.userData = [];
@@ -245,33 +365,119 @@ const filldata = asyncHandler(async (req, res, next) => {
 
     // Generate a new JWT token
     const generatedToken = token(user.user_id);
-
-    // Save the user with the new token
     user.token = generatedToken;
-    await user.save();
 
-    // Include the generated token in the response
-    res.status(200).json({
-      success: true,
-      message: "User updated successfully",
-      data: {
-        user_id: user.user_id,
-        email: user.email,
-        username: user.username,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        phone: user.phone,
-        address: user.address,
+    console.log("=== ATTEMPTING TO SAVE USER ===");
 
-        token: generatedToken,
-      },
-    });
+    try {
+      // Use findOneAndUpdate for more reliable saving
+      const savedUser = await User.findOneAndUpdate(
+        { user_id: user_id },
+        {
+          username: trimmedData.username,
+          firstName: trimmedData.firstName,
+          lastName: trimmedData.lastName,
+          phone: trimmedData.mobile,
+          address: trimmedData.address,
+          city: trimmedData.city,
+          state: trimmedData.state,
+          token: generatedToken,
+        },
+        {
+          new: true,
+          runValidators: true,
+          returnDocument: "after",
+        }
+      );
+
+      if (!savedUser) {
+        throw new CustomError("Failed to update user", 500);
+      }
+
+      console.log("✅ USER SAVED SUCCESSFULLY");
+      console.log("Saved user city:", savedUser.city);
+      console.log("Saved user state:", savedUser.state);
+
+      // Verify all fields were saved correctly
+      const verificationFields = {
+        username: {
+          expected: trimmedData.username,
+          actual: savedUser.username,
+        },
+        firstName: {
+          expected: trimmedData.firstName,
+          actual: savedUser.firstName,
+        },
+        lastName: {
+          expected: trimmedData.lastName,
+          actual: savedUser.lastName,
+        },
+        phone: { expected: trimmedData.mobile, actual: savedUser.phone },
+        address: { expected: trimmedData.address, actual: savedUser.address },
+        city: { expected: trimmedData.city, actual: savedUser.city },
+        state: { expected: trimmedData.state, actual: savedUser.state },
+      };
+
+      const savingErrors = [];
+      for (const [fieldName, { expected, actual }] of Object.entries(
+        verificationFields
+      )) {
+        if (expected !== actual) {
+          savingErrors.push(
+            `${fieldName}: expected "${expected}", got "${actual}"`
+          );
+        }
+      }
+
+      if (savingErrors.length > 0) {
+        console.error("❌ SAVING VERIFICATION FAILED:", savingErrors);
+        throw new CustomError(
+          `Data saving verification failed: ${savingErrors.join(", ")}`,
+          500
+        );
+      }
+
+      console.log("✅ ALL FIELDS SAVED AND VERIFIED SUCCESSFULLY");
+
+      // Include ALL fields in the response
+      res.status(200).json({
+        success: true,
+        message: "User updated successfully",
+        data: {
+          user_id: savedUser.user_id,
+          email: savedUser.email,
+          username: savedUser.username,
+          firstName: savedUser.firstName,
+          lastName: savedUser.lastName,
+          phone: savedUser.phone,
+          address: savedUser.address,
+          city: savedUser.city,
+          state: savedUser.state,
+          profileImage: savedUser.profileImage,
+          token: generatedToken,
+        },
+      });
+    } catch (saveError) {
+      console.error("❌ ERROR SAVING USER:", saveError);
+      if (saveError.name === "ValidationError") {
+        const validationErrors = Object.values(saveError.errors).map(
+          (err) => err.message
+        );
+        throw new CustomError(
+          `Validation failed: ${validationErrors.join(", ")}`,
+          400
+        );
+      }
+      throw new CustomError(
+        `Failed to save user data: ${saveError.message}`,
+        500
+      );
+    }
   } catch (error) {
-    next(error); // Use next to pass the error to the error handling middleware
+    console.error("❌ FILLDATA ERROR:", error);
+    next(error);
   }
 });
-
-
 
 // const filldata = asyncHandler(async (req, res, next) => {
 //   // Call uploadProfileImage middleware to handle image upload
@@ -694,10 +900,23 @@ const verifyPin = asyncHandler(async (req, res, next) => {
 });
 
 // Get Single User
-const getUser = asyncHandler(async (req, res, next) => {
+// In your user-info endpoint
+const getUser = asyncHandler(async (req, res) => {
   try {
-    // User data is already fetched by authMiddleware
-    const user = req.user;
+    const user_id = req.user.user_id;
+
+    // Make sure to select all fields including profileImage
+    const user = await User.findOne({ user_id }).select(
+      "-password -refreshToken -token -otp"
+    );
+
+    if (!user) {
+      throw new CustomError("User not found", 404);
+    }
+
+    console.log("=== USER FROM DB ===");
+    console.log("Full user object:", user);
+    console.log("ProfileImage:", user.profileImage);
 
     res.status(200).json({
       success: true,
