@@ -22,7 +22,7 @@ const corsOptions = {
 
     const allowedOrigins = [
       "https://www.klinner.net.ng/",
-      "https://kliner-web-app-gln3-git-main-onyilltos-projects.vercel.app",
+      "https://kliner-web-app-git-main-onyilltos-projects.vercel.app",
       "http://localhost:3000",
       "http://localhost:3001",
       "http://127.0.0.1:3000",
