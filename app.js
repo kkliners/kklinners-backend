@@ -15,46 +15,15 @@ const port = process.env.PORT || 3002;
 dbConnect();
 
 // Enhanced CORS configuration
+// DEVELOPMENT ONLY - More permissive CORS
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-
-    const allowedOrigins = [
-      https://klinner.onrender.com,
-      "https://www.klinner.onrender.com",
-      "http://localhost:3000",
-      "http://localhost:3001",
-      "http://127.0.0.1:3000",
-      "http://127.0.0.1:3001",
-      "https://localhost:3000",
-      "https://localhost:3001",
-    ];
-
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log(`CORS blocked origin: ${origin}`);
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
+  origin: true, // Allow all origins in development
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-  allowedHeaders: [
-    "Origin",
-    "X-Requested-With",
-    "Content-Type",
-    "Accept",
-    "Authorization",
-    "Cache-Control", // ← This fixes your CORS error
-    "Pragma", // ← This too
-    "Expires",
-    "Last-Modified",
-    "ETag",
-  ],
-  exposedHeaders: ["Content-Length", "Content-Type", "Cache-Control"],
-  preflightContinue: false,
-  optionsSuccessStatus: 200, // Some legacy browsers (IE11, various SmartTVs) choke on 204
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+  allowedHeaders: "*",
+  exposedHeaders: "*",
+  optionsSuccessStatus: 200,
+  maxAge: 86400,
 };
 
 // Apply CORS middleware
