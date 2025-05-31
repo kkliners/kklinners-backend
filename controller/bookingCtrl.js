@@ -180,67 +180,277 @@ console.log("Request Body:", req.body);
 
 
 const verifyPayment = async (req, res, next) => {
+  console.log("🔍 ==> VERIFY PAYMENT ENDPOINT HIT <==");
+  console.log("📦 Request Body:", JSON.stringify(req.body, null, 2));
+  console.log(
+    "🔑 Auth Header:",
+    req.headers.authorization ? "Present" : "Missing"
+  );
+  console.log("🌐 Request IP:", req.ip || req.connection.remoteAddress);
+  console.log("⏰ Timestamp:", new Date().toISOString());
+
   try {
     const { reference } = req.body;
 
+    // Validate reference
     if (!reference) {
+      console.log("❌ No reference provided in request body");
       return res.status(400).json({
         success: false,
         message: "Transaction reference is required",
+        received: req.body,
+      });
+    }
+
+    if (typeof reference !== "string" || reference.trim().length === 0) {
+      console.log("❌ Invalid reference format:", reference);
+      return res.status(400).json({
+        success: false,
+        message: "Invalid transaction reference format",
+        received: reference,
+      });
+    }
+
+    console.log("✅ Reference validated:", reference);
+
+    // Check environment variables
+    const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+    if (!PAYSTACK_SECRET_KEY) {
+      console.log("❌ PAYSTACK_SECRET_KEY environment variable missing");
+      return res.status(500).json({
+        success: false,
+        message: "Payment service configuration error",
+      });
+    }
+    console.log("✅ Paystack secret key found");
+
+    // Check if payment already verified (prevent duplicate processing)
+    console.log("🔍 Checking if payment already verified...");
+    const existingVerifiedService = await Service.findOne({
+      "booking.payment.reference": reference,
+      "booking.paymentStatus": "paid",
+    });
+
+    if (existingVerifiedService) {
+      console.log(
+        "✅ Payment already verified for service:",
+        existingVerifiedService._id
+      );
+      return res.status(200).json({
+        success: true,
+        message: "Payment already verified",
+        data: existingVerifiedService,
+        alreadyVerified: true,
       });
     }
 
     // Verify payment with Paystack
-    const response = await axios.get(
-      `https://api.paystack.co/transaction/verify/${reference}`,
-      {
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
+    console.log("📞 Calling Paystack verification API...");
+    console.log(
+      "🔗 URL:",
+      `https://api.paystack.co/transaction/verify/${reference}`
     );
 
+    let response;
+    try {
+      response = await axios.get(
+        `https://api.paystack.co/transaction/verify/${reference}`,
+        {
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 15000, // 15 seconds timeout
+        }
+      );
+      console.log("✅ Paystack API call successful");
+      console.log("📊 Response Status:", response.status);
+      console.log("📄 Response Data:", JSON.stringify(response.data, null, 2));
+    } catch (paystackError) {
+      console.error("❌ Paystack API Error:");
+      console.error("Error Type:", paystackError.constructor.name);
+      console.error("Error Message:", paystackError.message);
+
+      if (paystackError.response) {
+        console.error("Response Status:", paystackError.response.status);
+        console.error("Response Data:", paystackError.response.data);
+
+        if (paystackError.response.status === 404) {
+          return res.status(404).json({
+            success: false,
+            message:
+              "Transaction not found on Paystack. Please contact support.",
+            reference: reference,
+          });
+        } else if (paystackError.response.status === 401) {
+          return res.status(500).json({
+            success: false,
+            message: "Payment service authentication failed",
+          });
+        }
+      } else if (paystackError.code === "ECONNABORTED") {
+        return res.status(408).json({
+          success: false,
+          message: "Payment verification timeout. Please try again.",
+        });
+      }
+
+      throw paystackError;
+    }
+
     const paymentData = response.data.data;
+    console.log("💰 Payment Status from Paystack:", paymentData.status);
+    console.log("💵 Payment Amount:", paymentData.amount);
+    console.log("📧 Customer Email:", paymentData.customer?.email);
 
     if (paymentData.status !== "success") {
+      console.log("❌ Payment not successful:", paymentData.status);
       return res.status(400).json({
         success: false,
         message: "Payment not successful",
+        payment_status: paymentData.status,
+        gateway_response: paymentData.gateway_response,
       });
     }
 
     // Find the service linked to this payment reference
+    console.log("🔍 Looking for service with reference:", reference);
     const service = await Service.findOne({
       "booking.payment.reference": reference,
     });
 
     if (!service) {
+      console.log("❌ Service not found for reference:", reference);
+
+      // Debug: Check what services exist with payment references
+      const servicesWithPayments = await Service.find(
+        { "booking.payment.reference": { $exists: true } },
+        { "booking.payment.reference": 1, _id: 1, user_id: 1 }
+      ).limit(5);
+
+      console.log(
+        "🔍 Available services with payment references:",
+        servicesWithPayments.map((s) => ({
+          id: s._id,
+          reference: s.booking?.payment?.reference,
+          user_id: s.user_id,
+        }))
+      );
+
       return res.status(404).json({
         success: false,
         message: "Service not found for this transaction",
+        reference: reference,
+        debug: {
+          availableReferences: servicesWithPayments
+            .map((s) => s.booking?.payment?.reference)
+            .filter(Boolean),
+        },
       });
     }
 
-    // Update payment status
-    service.booking.paymentStatus = "paid";
-    await service.save();
+    console.log("✅ Service found:");
+    console.log("🆔 Service ID:", service._id);
+    console.log("👤 User ID:", service.user_id);
+    console.log("💰 Service Rate:", service.serviceRate);
+    console.log("📅 Booking Date:", service.booking.bookingDate);
+    console.log("💳 Current Payment Status:", service.booking.paymentStatus);
 
-    return res.status(200).json({
+    // Security check: Verify amount matches
+    const expectedAmount = service.serviceRate * 100; // Convert to kobo
+    const paidAmount = paymentData.amount;
+
+    console.log("💰 Amount Verification:");
+    console.log("Expected (kobo):", expectedAmount);
+    console.log("Paid (kobo):", paidAmount);
+
+    if (paidAmount !== expectedAmount) {
+      console.error("❌ AMOUNT MISMATCH DETECTED!");
+      console.error("Expected:", expectedAmount, "Paid:", paidAmount);
+
+      return res.status(400).json({
+        success: false,
+        message: "Payment amount does not match service cost",
+        expected_amount: expectedAmount / 100,
+        paid_amount: paidAmount / 100,
+        reference: reference,
+      });
+    }
+
+    console.log("✅ Amount verification passed");
+
+    // Update payment status
+    console.log("✏️ Updating payment status to 'paid'...");
+    const updateData = {
+      "booking.paymentStatus": "paid",
+      "booking.payment.verified_at": new Date(),
+      "booking.payment.paystack_transaction_id": paymentData.id,
+      "booking.payment.paid_amount": paidAmount / 100,
+      "booking.payment.payment_method": paymentData.channel,
+      "booking.payment.gateway_response": paymentData.gateway_response,
+      "booking.payment.paid_at": paymentData.paid_at
+        ? new Date(paymentData.paid_at)
+        : new Date(),
+    };
+
+    const updatedService = await Service.findByIdAndUpdate(
+      service._id,
+      { $set: updateData },
+      { new: true }
+    );
+
+    if (!updatedService) {
+      console.error("❌ Failed to update service");
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update service record",
+      });
+    }
+
+    console.log("✅ Service updated successfully");
+    console.log("💳 New Payment Status:", updatedService.booking.paymentStatus);
+
+    // Success response
+    const successResponse = {
       success: true,
       message: "Payment verified successfully",
-      data: service,
-    });
+      data: {
+        service_id: updatedService._id,
+        payment_status: updatedService.booking.paymentStatus,
+        reference: reference,
+        verified_at: updatedService.booking.payment.verified_at,
+        amount_paid: updatedService.booking.payment.paid_amount,
+        payment_method: updatedService.booking.payment.payment_method,
+        booking_date: updatedService.booking.bookingDate,
+        service_category: updatedService.serviceCategory,
+      },
+    };
+
+    console.log("🎉 Sending success response");
+    console.log("📤 Response:", JSON.stringify(successResponse, null, 2));
+
+    return res.status(200).json(successResponse);
   } catch (error) {
-    console.error("Verify Payment Error:", error.message || error);
-    next(error);
+    console.error("💥 ==> VERIFY PAYMENT ERROR <==");
+    console.error("Error Type:", error.constructor.name);
+    console.error("Error Message:", error.message);
+    console.error("Error Stack:", error.stack);
+
+    if (error.response) {
+      console.error("API Error Response:", error.response.data);
+      console.error("API Error Status:", error.response.status);
+      console.error("API Error Headers:", error.response.headers);
+    }
+
+    // Don't expose internal errors to client
+    return res.status(500).json({
+      success: false,
+      message:
+        "Payment verification failed. Please try again or contact support.",
+      error_id: Date.now(), // For tracking in logs
+    });
   }
 };
-
-
-
-
-
 
 // Get all User's Service
 const getUserServices = asyncHandler(async (req, res, next) => {
