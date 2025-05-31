@@ -3,7 +3,8 @@ const route = express.Router()
 const {authMiddleware,isAdmin} =require('../middleware/authMiddleware')
 const {
   createCleaningService,
-  verifyPayment,getSingleService,
+  verifyPayment,
+  getSingleService,
   paystackPayment,
   cancelService,
   userCancelledServices,
@@ -14,6 +15,7 @@ const {
   getUserUpcomingServices,
   getUserPendingServices,
   markTaskCompleted,
+  handlePaystackWebhook,
 } = require("../controller/bookingCtrl");
 route.get("/webhooks/paystack", (req, res) => {
   console.log("🔍 GET request - webhook verification");
