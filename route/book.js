@@ -127,9 +127,7 @@ route.get("/webhooks/paystack", (req, res) => {
                   
                   if (count <= 0) {
                       clearInterval(timer);
-                      window.location.href = 'https://kliner-web-app.vercel.app/booking-confirmation?reference=${
-                        reference || trxref
-                      }';
+                      window.location.href = 'https://kliner-web-app.vercel.app/booking-confirmation
                   }
               }, 1000);
           </script>
