@@ -26,7 +26,7 @@ route.get("/webhooks/paystack", (req, res) => {
   const { trxref, reference } = req.query;
 
   if (reference || trxref) {
-    // Return HTML page that auto-redirects
+    // Return HTML page with button to redirect
     const successPage = `
       <!DOCTYPE html>
       <html lang="en">
@@ -79,14 +79,6 @@ route.get("/webhooks/paystack", (req, res) => {
                   margin-bottom: 10px;
                   font-size: 24px;
               }
-              .countdown {
-                  background: #e3f2fd;
-                  padding: 15px;
-                  border-radius: 8px;
-                  margin: 20px 0;
-                  color: #1976d2;
-                  font-weight: bold;
-              }
               .reference {
                   background: #f8f9fa;
                   padding: 15px;
@@ -96,6 +88,32 @@ route.get("/webhooks/paystack", (req, res) => {
                   margin: 20px 0;
                   border-left: 4px solid #4CAF50;
                   word-break: break-all;
+              }
+              .confirm-button {
+                  background: #6366f1;
+                  color: white;
+                  border: none;
+                  padding: 15px 30px;
+                  border-radius: 10px;
+                  font-size: 16px;
+                  font-weight: 600;
+                  cursor: pointer;
+                  transition: all 0.3s ease;
+                  box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
+                  margin-top: 20px;
+              }
+              .confirm-button:hover {
+                  background: #5856eb;
+                  transform: translateY(-2px);
+                  box-shadow: 0 6px 15px rgba(99, 102, 241, 0.4);
+              }
+              .confirm-button:active {
+                  transform: translateY(0);
+              }
+              .subtitle {
+                  color: #666;
+                  margin-bottom: 20px;
+                  font-size: 16px;
               }
           </style>
       </head>
@@ -107,29 +125,20 @@ route.get("/webhooks/paystack", (req, res) => {
                   </svg>
               </div>
               <h1>Payment Successful! 🎉</h1>
-              <p>Your payment has been processed successfully.</p>
+              <p class="subtitle">Your payment has been processed successfully.</p>
               <div class="reference">
                   <strong>Transaction Reference:</strong><br>
                   ${reference || trxref}
               </div>
-              <div class="countdown">
-                  Redirecting to your booking confirmation in <span id="countdown">3</span> seconds...
-              </div>
+              <button class="confirm-button" onclick="goToConfirmation()">
+                  View Booking Confirmation
+              </button>
           </div>
           
           <script>
-              let count = 3;
-              const countdownElement = document.getElementById('countdown');
-              
-              const timer = setInterval(() => {
-                  count--;
-                  countdownElement.textContent = count;
-                  
-                  if (count <= 0) {
-                      clearInterval(timer);
-                      window.location.href = 'https://kliner-web-app.vercel.app/booking-confirmation
-                  }
-              }, 1000);
+              function goToConfirmation() {
+                  window.location.href = 'https://kliner-web-app.vercel.app/booking-confirmation?reference=${reference || trxref}';
+              }
           </script>
       </body>
       </html>
@@ -137,6 +146,7 @@ route.get("/webhooks/paystack", (req, res) => {
 
     return res.send(successPage);
   }
+});
 
   // Fallback redirect for verification requests without reference
   res.redirect("https://kliner-web-app.vercel.app");
