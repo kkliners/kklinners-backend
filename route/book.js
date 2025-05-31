@@ -15,7 +15,7 @@ const {
   getUserPendingServices,
   markTaskCompleted,
 } = require("../controller/bookingCtrl");
-
+route.post("/webhooks/paystack", handlePaystackWebhook);
 // Create a new cleaning service
 route.post('/create-service',authMiddleware, createCleaningService);
 // Process payment via Paystack

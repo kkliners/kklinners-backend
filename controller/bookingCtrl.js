@@ -644,6 +644,196 @@ const getUserCompletedServices = asyncHandler(async (req, res, next) => {
   );
 });
 
+// Webhook handler for Paystack events
+const handlePaystackWebhook = async (req, res) => {
+  console.log("🎣 ==> PAYSTACK WEBHOOK RECEIVED <==");
+  console.log("📦 Raw body:", req.body);
+  console.log("🔑 Headers:", req.headers);
+  
+  try {
+    const signature = req.headers['x-paystack-signature'];
+    const payload = JSON.stringify(req.body);
+    
+    console.log("🔐 Signature received:", signature);
+    console.log("📄 Payload:", payload);
+    
+    // Verify webhook signature
+    const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+    if (!PAYSTACK_SECRET_KEY) {
+      console.error("❌ PAYSTACK_SECRET_KEY not found");
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+    
+    const hash = crypto
+      .createHmac('sha512', PAYSTACK_SECRET_KEY)
+      .update(payload)
+      .digest('hex');
+    
+    console.log("🔐 Computed hash:", hash);
+    console.log("🔐 Signature match:", hash === signature);
+    
+    if (hash !== signature) {
+      console.error("❌ Invalid webhook signature");
+      return res.status(400).json({ error: 'Invalid signature' });
+    }
+
+    const event = req.body;
+    console.log("📨 Event type:", event.event);
+    console.log("📊 Event data:", event.data);
+    
+    switch (event.event) {
+      case 'charge.success':
+        console.log("✅ Processing successful charge");
+        await handleSuccessfulPayment(event.data);
+        break;
+        
+      case 'charge.failed':
+        console.log("❌ Processing failed charge");
+        await handleFailedPayment(event.data);
+        break;
+        
+      case 'charge.pending':
+        console.log("⏳ Processing pending charge");
+        await handlePendingPayment(event.data);
+        break;
+        
+      default:
+        console.log(`ℹ️ Unhandled webhook event: ${event.event}`);
+    }
+    
+    console.log("✅ Webhook processed successfully");
+    res.status(200).json({ message: 'Webhook processed successfully' });
+    
+  } catch (error) {
+    console.error("💥 Webhook processing error:");
+    console.error("Error type:", error.constructor.name);
+    console.error("Error message:", error.message);
+    console.error("Error stack:", error.stack);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+};
+
+// Helper function for successful payments
+const handleSuccessfulPayment = async (paymentData) => {
+  try {
+    const { reference, amount, customer } = paymentData;
+    
+    console.log("💰 Processing successful payment:");
+    console.log("📄 Reference:", reference);
+    console.log("💵 Amount:", amount);
+    console.log("📧 Customer:", customer?.email);
+    
+    // Find the service by payment reference
+    const service = await Service.findOne({
+      "booking.payment.reference": reference,
+    });
+    
+    if (!service) {
+      console.log("❌ Service not found for reference:", reference);
+      return;
+    }
+    
+    console.log("🏢 Service found:", service._id);
+    console.log("💳 Current status:", service.booking.paymentStatus);
+    
+    // Only update if not already paid (prevent duplicate processing)
+    if (service.booking.paymentStatus !== "paid") {
+      console.log("✏️ Updating service to paid status");
+      
+      service.booking.paymentStatus = "paid";
+      service.booking.payment.webhook_verified_at = new Date();
+      service.booking.payment.paystack_transaction_id = paymentData.id?.toString();
+      service.booking.payment.paid_amount = amount / 100; // Convert from kobo
+      service.booking.payment.payment_method = paymentData.channel;
+      service.booking.payment.gateway_response = paymentData.gateway_response;
+      
+      await service.save();
+      
+      console.log("✅ Service updated via webhook");
+      
+      // Optional: Send confirmation email/SMS here
+      await sendBookingConfirmation(service);
+    } else {
+      console.log("ℹ️ Payment already processed, skipping update");
+    }
+  } catch (error) {
+    console.error("💥 Error processing successful payment webhook:", error);
+  }
+};
+
+// Helper function for failed payments
+const handleFailedPayment = async (paymentData) => {
+  try {
+    const { reference, gateway_response } = paymentData;
+    
+    console.log("❌ Processing failed payment:");
+    console.log("📄 Reference:", reference);
+    console.log("💬 Gateway response:", gateway_response);
+    
+    const service = await Service.findOne({
+      "booking.payment.reference": reference,
+    });
+    
+    if (service) {
+      console.log("✏️ Updating service to failed status");
+      service.booking.paymentStatus = "failed";
+      service.booking.payment.failure_reason = gateway_response;
+      service.booking.payment.failed_at = new Date();
+      await service.save();
+      
+      console.log("✅ Service updated to failed status");
+    } else {
+      console.log("❌ Service not found for failed payment:", reference);
+    }
+  } catch (error) {
+    console.error("💥 Error processing failed payment webhook:", error);
+  }
+};
+
+// Helper function for pending payments
+const handlePendingPayment = async (paymentData) => {
+  try {
+    const { reference } = paymentData;
+    
+    console.log("⏳ Processing pending payment:");
+    console.log("📄 Reference:", reference);
+    
+    const service = await Service.findOne({
+      "booking.payment.reference": reference,
+    });
+    
+    if (service) {
+      console.log("✏️ Keeping service in pending status");
+      service.booking.payment.last_pending_update = new Date();
+      await service.save();
+      
+      console.log("✅ Service pending status updated");
+    }
+  } catch (error) {
+    console.error("💥 Error processing pending payment webhook:", error);
+  }
+};
+
+// Helper function for sending confirmation (implement based on your notification system)
+const sendBookingConfirmation = async (service) => {
+  try {
+    console.log("📧 Sending booking confirmation for service:", service._id);
+    // TODO: Implement your email/SMS notification here
+    // This could be an email service, SMS service, etc.
+    
+    // Example implementation:
+    // await emailService.send({
+    //   to: service.user_email,
+    //   subject: 'Booking Confirmed',
+    //   template: 'booking-confirmation',
+    //   data: service
+    // });
+    
+    console.log("✅ Confirmation sent successfully");
+  } catch (error) {
+    console.error("💥 Error sending confirmation:", error);
+  }
+};
 
 module.exports = {
   createCleaningService,
@@ -660,5 +850,5 @@ module.exports = {
   getUserPendingServices,
   markTaskCompleted,
   verifyPayment,
-  
+  handlePaystackWebhook,
 };
