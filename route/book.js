@@ -1,6 +1,6 @@
-const express = require('express')
-const route = express.Router()
-const {authMiddleware,isAdmin} =require('../middleware/authMiddleware')
+const express = require("express");
+const route = express.Router();
+const { authMiddleware, isAdmin } = require("../middleware/authMiddleware");
 const {
   createCleaningService,
   verifyPayment,
@@ -17,38 +17,49 @@ const {
   markTaskCompleted,
   handlePaystackWebhook,
 } = require("../controller/bookingCtrl");
+
+// 🚨 WEBHOOK ROUTES MUST BE FIRST! 🚨
 route.get("/webhooks/paystack", (req, res) => {
-  console.log("🔍 GET request - webhook verification");
+  console.log("🔍 GET webhook hit");
   res.status(200).json({
     message: "Webhook endpoint verified",
     status: "active",
   });
 });
+
 route.post("/webhooks/paystack", handlePaystackWebhook);
-// Create a new cleaning service
-route.post('/create-service',authMiddleware, createCleaningService);
-// Process payment via Paystack
-route.post('/paystack',authMiddleware, paystackPayment);
+route.get("/webhook-test", (req, res) => {
+  res.json({ message: "Test route working!" });
+});
+
+// NON-PARAMETERIZED ROUTES NEXT
+route.post("/create-service", authMiddleware, createCleaningService);
+route.post("/paystack", authMiddleware, paystackPayment);
 route.post("/verify-payment", verifyPayment);
+route.get("/services/pending", isAdmin, authMiddleware, getAllPendingServices);
+route.get("/services/upcoming", isAdmin, getAllUpcomingServices);
 
-// Get details of a specific service for a user
-route.get('/:user_id/services/:service_id',authMiddleware, getSingleService);
-// Cancel a specific service
-route.post('/:service_id',authMiddleware, cancelService);
-// Get all services canceled by a specific user
-route.get('/:user_id/cancelled-services',authMiddleware, userCancelledServices);
-// Get all pending services 
-route.get('/services/pending',isAdmin,authMiddleware, getAllPendingServices);
-// Get all upcoming services 
-route.get('/services/upcoming',isAdmin, getAllUpcomingServices);
-// Endpoint to get all pending services for a specific user
-route.get('/:user_id/services/pending',authMiddleware, getUserPendingServices);
-// Endpoint to get all upcoming services for a specific user
-route.get('/:user_id/services/upcoming',authMiddleware, getUserUpcomingServices);
-// Endpoint to get all completed services for a specific user
-route.get('/:user_id/services/completed',authMiddleware, getUserCompletedServices);
+// 🚨 PARAMETERIZED ROUTES LAST! 🚨
+route.get("/:user_id/services/:service_id", authMiddleware, getSingleService);
+route.get(
+  "/:user_id/cancelled-services",
+  authMiddleware,
+  userCancelledServices
+);
+route.get("/:user_id/services/pending", authMiddleware, getUserPendingServices);
+route.get(
+  "/:user_id/services/upcoming",
+  authMiddleware,
+  getUserUpcomingServices
+);
+route.get(
+  "/:user_id/services/completed",
+  authMiddleware,
+  getUserCompletedServices
+);
+route.put("/:Service_id/complete", authMiddleware, markTaskCompleted);
 
-// Define route to handle requests to mark a task as completed
-route.put('/:Service_id/complete',authMiddleware, markTaskCompleted);
+// This is the problematic route - MUST be last
+route.post("/:service_id", authMiddleware, cancelService);
 
 module.exports = route;
