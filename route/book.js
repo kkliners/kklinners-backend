@@ -20,13 +20,20 @@ const {
 
 // 🚨 WEBHOOK ROUTES MUST BE FIRST! 🚨
 route.get("/webhooks/paystack", (req, res) => {
-  console.log("🔍 GET webhook hit");
-  res.status(200).json({
-    message: "Webhook endpoint verified",
-    status: "active",
-  });
-});
+  console.log("🔍 GET request - webhook verification");
+  console.log("Query params:", req.query);
 
+  const { trxref, reference } = req.query;
+
+  if (reference) {
+    // Redirect to your frontend with the transaction reference
+    const redirectUrl = `https://kliner-web-app.vercel.app/payment-success?reference=${reference}`;
+    return res.redirect(redirectUrl);
+  }
+
+  // Fallback redirect
+  res.redirect("https://kliner-web-app.vercel.app");
+});
 route.post("/webhooks/paystack", handlePaystackWebhook);
 route.get("/webhook-test", (req, res) => {
   res.json({ message: "Test route working!" });
