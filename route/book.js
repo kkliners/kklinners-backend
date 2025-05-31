@@ -27,7 +27,7 @@ route.get("/webhooks/paystack", (req, res) => {
 
   if (reference) {
     // Redirect to your frontend with the transaction reference
-    const redirectUrl = `https://kliner-web-app.vercel.app`;
+    const redirectUrl = `https://kliner-web-app.vercel.app/booking/bookings`;
     return res.redirect(redirectUrl);
   }
 
