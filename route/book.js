@@ -15,7 +15,14 @@ const {
   getUserPendingServices,
   markTaskCompleted,
 } = require("../controller/bookingCtrl");
-route.get("/webhooks/paystack", handlePaystackWebhook);
+route.get("/webhooks/paystack", (req, res) => {
+  console.log("🔍 GET request - webhook verification");
+  res.status(200).json({
+    message: "Webhook endpoint verified",
+    status: "active",
+  });
+});
+route.post("/webhooks/paystack", handlePaystackWebhook);
 // Create a new cleaning service
 route.post('/create-service',authMiddleware, createCleaningService);
 // Process payment via Paystack
