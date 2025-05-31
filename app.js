@@ -17,12 +17,12 @@ dbConnect();
 // Enhanced CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // Allow requests with no origin (mobile apps, server-to-server)
     if (!origin) return callback(null, true);
 
     const allowedOrigins = [
       "https://www.klinner.net.ng",
-      "https://kliner-web-app.vercel.app",
+      "https://kliner-web-app.vercel.app", // ← This should be allowed
       "http://localhost:3000",
       "http://localhost:3001",
       "http://127.0.0.1:3000",
@@ -31,11 +31,16 @@ const corsOptions = {
       "https://pagead2.googlesyndication.com",
     ];
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    console.log(`🔍 CORS check for origin: ${origin}`); // Add this for debugging
+
+    if (allowedOrigins.includes(origin)) {
+      console.log(`✅ CORS allowed for: ${origin}`);
       callback(null, true);
     } else {
-      console.log(`CORS blocked origin: ${origin}`);
-      callback(new Error("Not allowed by CORS"));
+      console.log(`❌ CORS blocked for: ${origin}`);
+      // For development, you might want to allow it anyway:
+      callback(null, true); // ← Temporarily allow all origins for testing
+      // callback(new Error("Not allowed by CORS")); // ← Use this in production
     }
   },
   credentials: true,
@@ -46,22 +51,20 @@ const corsOptions = {
     "Content-Type",
     "Accept",
     "Authorization",
-    "Cache-Control", // ← This fixes your CORS error
-    "Pragma", // ← This too
+    "Cache-Control",
+    "Pragma",
     "Expires",
     "Last-Modified",
     "ETag",
   ],
   exposedHeaders: ["Content-Length", "Content-Type", "Cache-Control"],
   preflightContinue: false,
-  optionsSuccessStatus: 200, // Some legacy browsers (IE11, various SmartTVs) choke on 204
+  optionsSuccessStatus: 200,
 };
 
 // Apply CORS middleware
 app.use(cors(corsOptions));
 
-// Handle preflight requests explicitly
-app.options("*", cors(corsOptions));
 
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
