@@ -114,7 +114,7 @@ const createCleaningService = async (req, res, next) => {
         bookingDate,
         bookingTime,
         location,
-        paymentStatus: "pending",
+        paymentStatus: "paid",
         progress: "pending", // Initial status
         payment: {
           authorization_url,
