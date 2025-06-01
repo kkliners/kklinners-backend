@@ -4,6 +4,7 @@ const Service = require("../model/cleaningService");
 const { Error } = require("mongoose");
 const calculateServiceRate = require("../utils/calculateRate");
 const axios = require("axios");
+const crypto = require("crypto");
 
 // Standardized response function
 const sendResponse = (res, statusCode, success, message, data = null) => {
@@ -14,8 +15,7 @@ const sendResponse = (res, statusCode, success, message, data = null) => {
   });
 };
 
-
-
+// Custom error classes
 class PaymentError extends Error {
   constructor(message, statusCode = 400) {
     super(message);
@@ -24,64 +24,16 @@ class PaymentError extends Error {
   }
 }
 
-// Paystack configuration
-const paystackConfig = {
-  secretKey: "sk_test_404411a98099866d1972d924fea7d3503e83b9d0", // Replace with your actual key
-};
+// Environment variables
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
+// Paystack configuration
 const paystackHeaders = {
-  Authorization: `Bearer ${paystackConfig.secretKey}`,
+  Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
   "Content-Type": "application/json",
 };
 
-// Paystack payment endpoint
-const paystackPaymentURL = "https://api.paystack.co/transaction/initialize";
-
-// Function to initiate Paystack payment
-const initiatePaystackPayment = async (email, amount) => {
-  const response = await axios.post(
-    paystackPaymentURL,
-    { email, amount },
-    { headers: paystackHeaders }
-  );
-  return response.data;
-};
-
-const paystackPayment = asyncHandler(async (req, res, next) => {
-  try {
-    const { email, amount } = req.body;
-
-    // Call Paystack to initialize payment
-    const paymentResponse = await initiatePaystackPayment(email, amount);
-
-    if (paymentResponse.status && paymentResponse.data) {
-      const { authorization_url, access_code, reference } =
-        paymentResponse.data;
-
-      return sendResponse(res, 200, true, "Authorization URL created", {
-        authorization_url,
-        access_code,
-        reference,
-      });
-    } else {
-      throw new CustomError("Internal Server Error", 500);
-    }
-  } catch (error) {
-    console.error("Error processing Paystack payment:", error);
-    next(error);
-  }
-});
-
-
-
-
-
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-
-// const calculateServiceRate = (areas) => {
-//   return areas.length * 2000; // Example rate logic
-// };
-
+// Create Cleaning Service with Paystack Payment
 const createCleaningService = async (req, res, next) => {
   try {
     const {
@@ -93,8 +45,10 @@ const createCleaningService = async (req, res, next) => {
       bookingTime,
       location,
     } = req.body;
-console.log("Request Body:", req.body);
-    console.log("User ID:", user_id);
+
+    console.log("🔍 Creating cleaning service for user:", user_id);
+    console.log("📦 Request Body:", req.body);
+
     // Validate input
     if (
       !user_id ||
@@ -108,9 +62,11 @@ console.log("Request Body:", req.body);
       return res.status(400).json({
         success: false,
         message: "All fields are required",
+        received: req.body,
       });
     }
 
+    // Find user
     const user = await User.findOne({ user_id });
     if (!user) {
       return res.status(404).json({
@@ -119,24 +75,33 @@ console.log("Request Body:", req.body);
       });
     }
 
+    // Calculate service rate
     const serviceRate = calculateServiceRate(areas);
+    console.log("💰 Service rate calculated:", serviceRate);
 
     // Initialize Paystack payment
-    const response = await axios.post(
+    const paystackResponse = await axios.post(
       "https://api.paystack.co/transaction/initialize",
       {
         email: user.email,
-        amount: serviceRate * 100, // Convert to kobo
+        amount: serviceRate, // Amount should already be in kobo from calculateServiceRate
+        callback_url: `${process.env.FRONTEND_URL}/payment/callback`,
+        metadata: {
+          user_id: user.user_id,
+          service_type: serviceName,
+          areas: areas.join(", "),
+          booking_date: bookingDate,
+          booking_time: bookingTime,
+        },
       },
       {
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-          "Content-Type": "application/json",
-        },
+        headers: paystackHeaders,
       }
     );
 
-    const { authorization_url, access_code, reference } = response.data.data;
+    const { authorization_url, access_code, reference } =
+      paystackResponse.data.data;
+    console.log("💳 Paystack payment initialized:", reference);
 
     // Create service entry
     const newService = new Service({
@@ -144,26 +109,30 @@ console.log("Request Body:", req.body);
       serviceName,
       serviceCategory,
       areas,
-      serviceRate,
+      serviceRate: serviceRate / 100, // Store in naira for consistency
       booking: {
         bookingDate,
         bookingTime,
         location,
         paymentStatus: "pending",
+        progress: "pending", // Initial status
         payment: {
           authorization_url,
           access_code,
           reference,
+          created_at: new Date(),
         },
       },
     });
 
     await newService.save();
+    console.log("✅ Service created successfully:", newService._id);
 
     return res.status(201).json({
       success: true,
       message: "Service booked successfully",
       data: {
+        service_id: newService._id,
         cleaningService: newService,
         payment: {
           authorization_url,
@@ -173,69 +142,43 @@ console.log("Request Body:", req.body);
       },
     });
   } catch (error) {
-    console.error("Book Service Error:", error.message || error);
+    console.error("💥 Create Service Error:", error.message || error);
     next(error);
   }
 };
 
-
+// Verify Payment
 const verifyPayment = async (req, res, next) => {
   console.log("🔍 ==> VERIFY PAYMENT ENDPOINT HIT <==");
   console.log("📦 Request Body:", JSON.stringify(req.body, null, 2));
-  console.log(
-    "🔑 Auth Header:",
-    req.headers.authorization ? "Present" : "Missing"
-  );
-  console.log("🌐 Request IP:", req.ip || req.connection.remoteAddress);
-  console.log("⏰ Timestamp:", new Date().toISOString());
 
   try {
     const { reference } = req.body;
 
     // Validate reference
-    if (!reference) {
-      console.log("❌ No reference provided in request body");
+    if (
+      !reference ||
+      typeof reference !== "string" ||
+      reference.trim().length === 0
+    ) {
+      console.log("❌ Invalid reference:", reference);
       return res.status(400).json({
         success: false,
-        message: "Transaction reference is required",
+        message: "Valid transaction reference is required",
         received: req.body,
-      });
-    }
-
-    if (typeof reference !== "string" || reference.trim().length === 0) {
-      console.log("❌ Invalid reference format:", reference);
-      return res.status(400).json({
-        success: false,
-        message: "Invalid transaction reference format",
-        received: reference,
       });
     }
 
     console.log("✅ Reference validated:", reference);
 
-    // Check environment variables
-    const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-    if (!PAYSTACK_SECRET_KEY) {
-      console.log("❌ PAYSTACK_SECRET_KEY environment variable missing");
-      return res.status(500).json({
-        success: false,
-        message: "Payment service configuration error",
-      });
-    }
-    console.log("✅ Paystack secret key found");
-
-    // Check if payment already verified (prevent duplicate processing)
-    console.log("🔍 Checking if payment already verified...");
+    // Check if payment already verified
     const existingVerifiedService = await Service.findOne({
       "booking.payment.reference": reference,
       "booking.paymentStatus": "paid",
     });
 
     if (existingVerifiedService) {
-      console.log(
-        "✅ Payment already verified for service:",
-        existingVerifiedService._id
-      );
+      console.log("✅ Payment already verified");
       return res.status(200).json({
         success: true,
         message: "Payment already verified",
@@ -244,64 +187,18 @@ const verifyPayment = async (req, res, next) => {
       });
     }
 
-    // Verify payment with Paystack
-    console.log("📞 Calling Paystack verification API...");
-    console.log(
-      "🔗 URL:",
-      `https://api.paystack.co/transaction/verify/${reference}`
+    // Verify with Paystack
+    console.log("📞 Verifying with Paystack...");
+    const paystackResponse = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      {
+        headers: paystackHeaders,
+        timeout: 15000,
+      }
     );
 
-    let response;
-    try {
-      response = await axios.get(
-        `https://api.paystack.co/transaction/verify/${reference}`,
-        {
-          headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-            "Content-Type": "application/json",
-          },
-          timeout: 15000, // 15 seconds timeout
-        }
-      );
-      console.log("✅ Paystack API call successful");
-      console.log("📊 Response Status:", response.status);
-      console.log("📄 Response Data:", JSON.stringify(response.data, null, 2));
-    } catch (paystackError) {
-      console.error("❌ Paystack API Error:");
-      console.error("Error Type:", paystackError.constructor.name);
-      console.error("Error Message:", paystackError.message);
-
-      if (paystackError.response) {
-        console.error("Response Status:", paystackError.response.status);
-        console.error("Response Data:", paystackError.response.data);
-
-        if (paystackError.response.status === 404) {
-          return res.status(404).json({
-            success: false,
-            message:
-              "Transaction not found on Paystack. Please contact support.",
-            reference: reference,
-          });
-        } else if (paystackError.response.status === 401) {
-          return res.status(500).json({
-            success: false,
-            message: "Payment service authentication failed",
-          });
-        }
-      } else if (paystackError.code === "ECONNABORTED") {
-        return res.status(408).json({
-          success: false,
-          message: "Payment verification timeout. Please try again.",
-        });
-      }
-
-      throw paystackError;
-    }
-
-    const paymentData = response.data.data;
-    console.log("💰 Payment Status from Paystack:", paymentData.status);
-    console.log("💵 Payment Amount:", paymentData.amount);
-    console.log("📧 Customer Email:", paymentData.customer?.email);
+    const paymentData = paystackResponse.data.data;
+    console.log("💰 Payment status from Paystack:", paymentData.status);
 
     if (paymentData.status !== "success") {
       console.log("❌ Payment not successful:", paymentData.status);
@@ -313,76 +210,41 @@ const verifyPayment = async (req, res, next) => {
       });
     }
 
-    // Find the service linked to this payment reference
-    console.log("🔍 Looking for service with reference:", reference);
+    // Find service
     const service = await Service.findOne({
       "booking.payment.reference": reference,
     });
 
     if (!service) {
       console.log("❌ Service not found for reference:", reference);
-
-      // Debug: Check what services exist with payment references
-      const servicesWithPayments = await Service.find(
-        { "booking.payment.reference": { $exists: true } },
-        { "booking.payment.reference": 1, _id: 1, user_id: 1 }
-      ).limit(5);
-
-      console.log(
-        "🔍 Available services with payment references:",
-        servicesWithPayments.map((s) => ({
-          id: s._id,
-          reference: s.booking?.payment?.reference,
-          user_id: s.user_id,
-        }))
-      );
-
       return res.status(404).json({
         success: false,
         message: "Service not found for this transaction",
         reference: reference,
-        debug: {
-          availableReferences: servicesWithPayments
-            .map((s) => s.booking?.payment?.reference)
-            .filter(Boolean),
-        },
       });
     }
 
-    console.log("✅ Service found:");
-    console.log("🆔 Service ID:", service._id);
-    console.log("👤 User ID:", service.user_id);
-    console.log("💰 Service Rate:", service.serviceRate);
-    console.log("📅 Booking Date:", service.booking.bookingDate);
-    console.log("💳 Current Payment Status:", service.booking.paymentStatus);
+    console.log("✅ Service found:", service._id);
 
-    // Security check: Verify amount matches
-    const expectedAmount = service.serviceRate * 100; // Convert to kobo
+    // Verify amount (serviceRate is in naira, convert to kobo for comparison)
+    const expectedAmount = service.serviceRate * 100;
     const paidAmount = paymentData.amount;
 
-    console.log("💰 Amount Verification:");
-    console.log("Expected (kobo):", expectedAmount);
-    console.log("Paid (kobo):", paidAmount);
-
     if (paidAmount !== expectedAmount) {
-      console.error("❌ AMOUNT MISMATCH DETECTED!");
-      console.error("Expected:", expectedAmount, "Paid:", paidAmount);
-
+      console.error("❌ AMOUNT MISMATCH!");
       return res.status(400).json({
         success: false,
         message: "Payment amount does not match service cost",
         expected_amount: expectedAmount / 100,
         paid_amount: paidAmount / 100,
-        reference: reference,
       });
     }
 
-    console.log("✅ Amount verification passed");
-
-    // Update payment status
-    console.log("✏️ Updating payment status to 'paid'...");
+    // Update payment status and progress
+    console.log("✏️ Updating payment status...");
     const updateData = {
       "booking.paymentStatus": "paid",
+      "booking.progress": "confirmed", // Auto-confirm when paid
       "booking.payment.verified_at": new Date(),
       "booking.payment.paystack_transaction_id": paymentData.id,
       "booking.payment.paid_amount": paidAmount / 100,
@@ -399,24 +261,17 @@ const verifyPayment = async (req, res, next) => {
       { new: true }
     );
 
-    if (!updatedService) {
-      console.error("❌ Failed to update service");
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update service record",
-      });
-    }
-
     console.log("✅ Service updated successfully");
     console.log("💳 New Payment Status:", updatedService.booking.paymentStatus);
+    console.log("📊 New Progress Status:", updatedService.booking.progress);
 
-    // Success response
-    const successResponse = {
+    return res.status(200).json({
       success: true,
       message: "Payment verified successfully",
       data: {
         service_id: updatedService._id,
         payment_status: updatedService.booking.paymentStatus,
+        progress_status: updatedService.booking.progress,
         reference: reference,
         verified_at: updatedService.booking.payment.verified_at,
         amount_paid: updatedService.booking.payment.paid_amount,
@@ -424,45 +279,37 @@ const verifyPayment = async (req, res, next) => {
         booking_date: updatedService.booking.bookingDate,
         service_category: updatedService.serviceCategory,
       },
-    };
-
-    console.log("🎉 Sending success response");
-    console.log("📤 Response:", JSON.stringify(successResponse, null, 2));
-
-    return res.status(200).json(successResponse);
+    });
   } catch (error) {
-    console.error("💥 ==> VERIFY PAYMENT ERROR <==");
-    console.error("Error Type:", error.constructor.name);
-    console.error("Error Message:", error.message);
-    console.error("Error Stack:", error.stack);
-
-    if (error.response) {
-      console.error("API Error Response:", error.response.data);
-      console.error("API Error Status:", error.response.status);
-      console.error("API Error Headers:", error.response.headers);
-    }
-
-    // Don't expose internal errors to client
+    console.error("💥 Verify Payment Error:", error.message);
     return res.status(500).json({
       success: false,
       message:
         "Payment verification failed. Please try again or contact support.",
-      error_id: Date.now(), // For tracking in logs
+      error_id: Date.now(),
     });
   }
 };
 
-// Get all User's Service
+// Get all User's Services
 const getUserServices = asyncHandler(async (req, res, next) => {
   const user_id = req.params.user_id;
-  const userServices = await Service.find({ user_id });
+  console.log("🔍 Getting services for user:", user_id);
+
+  const userServices = await Service.find({ user_id }).sort({ createdAt: -1 });
 
   if (userServices.length === 0) {
-    res.status(404);
-    throw new Error("No services found for the user");
+    return sendResponse(res, 404, false, "No services found for this user", []);
   }
 
-  return sendResponse(res, 200, true, "All user services retrieved successfully", userServices);
+  console.log("✅ Found", userServices.length, "services");
+  return sendResponse(
+    res,
+    200,
+    true,
+    "All user services retrieved successfully",
+    userServices
+  );
 });
 
 // Get a Single Service
@@ -476,13 +323,21 @@ const getSingleService = asyncHandler(async (req, res, next) => {
     throw new Error("Service not found");
   }
 
-  return sendResponse(res, 200, true, "User service retrieved successfully", service);
+  return sendResponse(
+    res,
+    200,
+    true,
+    "User service retrieved successfully",
+    service
+  );
 });
 
-// User cancelled Service
+// Cancel Service
 const cancelService = asyncHandler(async (req, res, next) => {
   const { service_id } = req.params;
   const { cancellationReason } = req.body;
+
+  console.log("🚫 Cancelling service:", service_id);
 
   const service = await Service.findOne({ service_id });
 
@@ -491,364 +346,316 @@ const cancelService = asyncHandler(async (req, res, next) => {
     throw new Error("Cleaning service not found");
   }
 
-  if (service.booking.paymentStatus !== "pending") {
+  // Check if service can be cancelled
+  if (!["pending", "confirmed"].includes(service.booking.progress)) {
     res.status(400);
-    throw new Error("Cannot cancel a completed or ongoing service");
+    throw new Error("Cannot cancel service at this stage");
   }
 
+  // Update service status
   service.booking.progress = "cancel";
-  service.booking.cancellationReason = cancellationReason;
+  service.booking.cancellationReason =
+    cancellationReason || "Cancelled by user";
+  service.booking.cancelled_at = new Date();
   await service.save();
 
-  return sendResponse(res, 200, true, "Cleaning service canceled successfully", service);
+  console.log("✅ Service cancelled successfully");
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    "Cleaning service cancelled successfully",
+    service
+  );
 });
 
-// Get a specific User Canceled Services
+// Update Service Status (for admin/cleaner use)
+const updateServiceStatus = asyncHandler(async (req, res, next) => {
+  const { service_id } = req.params;
+  const { progress, notes } = req.body;
+
+  console.log("🔄 Updating service status:", service_id, "to", progress);
+
+  const service = await Service.findOne({ service_id });
+
+  if (!service) {
+    res.status(404);
+    throw new Error("Service not found");
+  }
+
+  // Validate status transition
+  const validStatuses = [
+    "pending",
+    "confirmed",
+    "in-progress",
+    "completed",
+    "cancel",
+  ];
+  if (!validStatuses.includes(progress)) {
+    res.status(400);
+    throw new Error("Invalid status");
+  }
+
+  // Update status
+  service.booking.progress = progress;
+  if (notes) service.booking.notes = notes;
+
+  // Set timestamps based on status
+  switch (progress) {
+    case "completed":
+      service.booking.completed_at = new Date();
+      break;
+    case "in-progress":
+      service.booking.started_at = new Date();
+      break;
+  }
+
+  await service.save();
+
+  console.log("✅ Service status updated to:", progress);
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    `Service status updated to ${progress}`,
+    service
+  );
+});
+
+// Get User's Cancelled Services
 const userCancelledServices = asyncHandler(async (req, res, next) => {
   const { user_id } = req.params;
 
   const cancelledServices = await Service.find({
     user_id,
     "booking.progress": "cancel",
-  });
+  }).sort({ createdAt: -1 });
 
   return sendResponse(
     res,
     200,
     true,
-    cancelledServices.length ? "Cancelled services retrieved successfully" : "No cancelled services found for this user",
+    cancelledServices.length
+      ? "Cancelled services retrieved successfully"
+      : "No cancelled services found for this user",
     cancelledServices
   );
 });
 
-// Get all upcoming services
-const getAllUpcomingServices = asyncHandler(async (req, res, next) => {
-  const currentDate = new Date();
-  const upcomingServices = await Service.find({
-    "booking.bookingDate": { $gte: currentDate },
-    "booking.progress": { $nin: ["cancel", "completed"] },
-  });
+// Get User's Pending Services
+const getUserPendingServices = asyncHandler(async (req, res, next) => {
+  const { user_id } = req.params;
+
+  const pendingServices = await Service.find({
+    user_id,
+    "booking.progress": "pending",
+  }).sort({ createdAt: -1 });
 
   return sendResponse(
     res,
     200,
     true,
-    upcomingServices.length ? "Upcoming services retrieved successfully" : "No upcoming services found",
-    upcomingServices
-  );
-});
-
-// Get all completed services
-const getAllCompletedServices = asyncHandler(async (req, res, next) => {
-  const completedServices = await Service.find({ "booking.progress": "completed" });
-
-  return sendResponse(
-    res,
-    200,
-    true,
-    completedServices.length ? "Completed services retrieved successfully" : "No completed services found",
-    completedServices
-  );
-});
-
-// Get all pending services
-const getAllPendingServices = asyncHandler(async (req, res, next) => {
-  const pendingServices = await Service.find({ "booking.paymentStatus": "pending" });
-
-  return sendResponse(
-    res,
-    200,
-    true,
-    pendingServices.length ? "Pending services retrieved successfully" : "No pending services found",
+    pendingServices.length
+      ? "User pending services retrieved successfully"
+      : "No pending services found for this user",
     pendingServices
   );
 });
 
-// Get all pending services for a specific user
-const getUserPendingServices = asyncHandler(async (req, res, next) => {
+// Get User's Confirmed Services
+const getUserConfirmedServices = asyncHandler(async (req, res, next) => {
   const { user_id } = req.params;
 
-  const userPendingServices = await Service.find({
+  const confirmedServices = await Service.find({
     user_id,
-    "booking.progress": "pending",
-  });
+    "booking.progress": "confirmed",
+  }).sort({ createdAt: -1 });
 
   return sendResponse(
     res,
     200,
     true,
-    userPendingServices.length ? "User pending services retrieved successfully" : "No pending services found for this user",
-    userPendingServices
+    confirmedServices.length
+      ? "User confirmed services retrieved successfully"
+      : "No confirmed services found for this user",
+    confirmedServices
   );
 });
 
-// Get all upcoming services for a specific user
+// Get User's Completed Services
+const getUserCompletedServices = asyncHandler(async (req, res, next) => {
+  const { user_id } = req.params;
+
+  const completedServices = await Service.find({
+    user_id,
+    "booking.progress": "completed",
+  }).sort({ createdAt: -1 });
+
+  return sendResponse(
+    res,
+    200,
+    true,
+    completedServices.length
+      ? "User completed services retrieved successfully"
+      : "No completed services found for this user",
+    completedServices
+  );
+});
+
+// Get User's Upcoming Services
 const getUserUpcomingServices = asyncHandler(async (req, res, next) => {
   const { user_id } = req.params;
   const currentDate = new Date();
 
-  const userUpcomingServices = await Service.find({
+  const upcomingServices = await Service.find({
     user_id,
     "booking.bookingDate": { $gte: currentDate },
-    "booking.progress": { $nin: ["cancel", "completed"] },
-  });
+    "booking.progress": { $in: ["confirmed", "pending"] },
+  }).sort({ "booking.bookingDate": 1 });
 
   return sendResponse(
     res,
     200,
     true,
-    userUpcomingServices.length ? "User upcoming services retrieved successfully" : "No upcoming services found for this user",
-    userUpcomingServices
+    upcomingServices.length
+      ? "User upcoming services retrieved successfully"
+      : "No upcoming services found for this user",
+    upcomingServices
   );
 });
 
-// Mark task as completed
+// Mark Service as Completed
 const markTaskCompleted = asyncHandler(async (req, res, next) => {
   const { service_id } = req.params;
 
-  const updatedTask = await Service.findOneAndUpdate(
+  const updatedService = await Service.findOneAndUpdate(
     { service_id },
-    { "booking.progress": "completed" },
+    {
+      "booking.progress": "completed",
+      "booking.completed_at": new Date(),
+    },
     { new: true }
   );
 
-  if (!updatedTask) {
+  if (!updatedService) {
     res.status(404);
-    throw new Error("Task not found");
+    throw new Error("Service not found");
   }
 
   return sendResponse(
     res,
     200,
     true,
-    "Task marked as completed successfully",
-    updatedTask
+    "Service marked as completed successfully",
+    updatedService
   );
 });
 
-// Get all completed services for a specific user
-const getUserCompletedServices = asyncHandler(async (req, res, next) => {
-  const { user_id } = req.params;
-
-  const userCompletedServices = await Service.find({
-    user_id,
-    "booking.progress": "completed",
-  });
-
-  return sendResponse(
-    res,
-    200,
-    true,
-    userCompletedServices.length ? "User completed services retrieved successfully" : "No completed services found for this user",
-    userCompletedServices
-  );
-});
-
-// Webhook handler for Paystack events
+// Paystack Webhook Handler
 const handlePaystackWebhook = async (req, res) => {
   console.log("🎣 ==> PAYSTACK WEBHOOK RECEIVED <==");
-  console.log("📦 Raw body:", req.body);
-  console.log("🔑 Headers:", req.headers);
-  
+
   try {
-    const signature = req.headers['x-paystack-signature'];
+    const signature = req.headers["x-paystack-signature"];
     const payload = JSON.stringify(req.body);
-    
-    console.log("🔐 Signature received:", signature);
-    console.log("📄 Payload:", payload);
-    
+
     // Verify webhook signature
-    const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-    if (!PAYSTACK_SECRET_KEY) {
-      console.error("❌ PAYSTACK_SECRET_KEY not found");
-      return res.status(500).json({ error: 'Server configuration error' });
-    }
-    
     const hash = crypto
-      .createHmac('sha512', PAYSTACK_SECRET_KEY)
+      .createHmac("sha512", PAYSTACK_SECRET_KEY)
       .update(payload)
-      .digest('hex');
-    
-    console.log("🔐 Computed hash:", hash);
-    console.log("🔐 Signature match:", hash === signature);
-    
+      .digest("hex");
+
     if (hash !== signature) {
       console.error("❌ Invalid webhook signature");
-      return res.status(400).json({ error: 'Invalid signature' });
+      return res.status(400).json({ error: "Invalid signature" });
     }
 
     const event = req.body;
     console.log("📨 Event type:", event.event);
-    console.log("📊 Event data:", event.data);
-    
+
     switch (event.event) {
-      case 'charge.success':
-        console.log("✅ Processing successful charge");
+      case "charge.success":
         await handleSuccessfulPayment(event.data);
         break;
-        
-      case 'charge.failed':
-        console.log("❌ Processing failed charge");
+      case "charge.failed":
         await handleFailedPayment(event.data);
         break;
-        
-      case 'charge.pending':
-        console.log("⏳ Processing pending charge");
-        await handlePendingPayment(event.data);
-        break;
-        
       default:
-        console.log(`ℹ️ Unhandled webhook event: ${event.event}`);
+        console.log(`ℹ️ Unhandled event: ${event.event}`);
     }
-    
-    console.log("✅ Webhook processed successfully");
-    res.status(200).json({ message: 'Webhook processed successfully' });
-    
+
+    res.status(200).json({ message: "Webhook processed successfully" });
   } catch (error) {
-    console.error("💥 Webhook processing error:");
-    console.error("Error type:", error.constructor.name);
-    console.error("Error message:", error.message);
-    console.error("Error stack:", error.stack);
-    res.status(500).json({ error: 'Webhook processing failed' });
+    console.error("💥 Webhook error:", error.message);
+    res.status(500).json({ error: "Webhook processing failed" });
   }
 };
 
-// Helper function for successful payments
+// Helper: Handle Successful Payment
 const handleSuccessfulPayment = async (paymentData) => {
   try {
-    const { reference, amount, customer } = paymentData;
-    
-    console.log("💰 Processing successful payment:");
-    console.log("📄 Reference:", reference);
-    console.log("💵 Amount:", amount);
-    console.log("📧 Customer:", customer?.email);
-    
-    // Find the service by payment reference
+    const { reference, amount } = paymentData;
+
     const service = await Service.findOne({
       "booking.payment.reference": reference,
     });
-    
+
     if (!service) {
-      console.log("❌ Service not found for reference:", reference);
+      console.log("❌ Service not found for webhook:", reference);
       return;
     }
-    
-    console.log("🏢 Service found:", service._id);
-    console.log("💳 Current status:", service.booking.paymentStatus);
-    
-    // Only update if not already paid (prevent duplicate processing)
+
+    // Only update if not already paid
     if (service.booking.paymentStatus !== "paid") {
-      console.log("✏️ Updating service to paid status");
-      
       service.booking.paymentStatus = "paid";
+      service.booking.progress = "confirmed";
       service.booking.payment.webhook_verified_at = new Date();
-      service.booking.payment.paystack_transaction_id = paymentData.id?.toString();
-      service.booking.payment.paid_amount = amount / 100; // Convert from kobo
-      service.booking.payment.payment_method = paymentData.channel;
-      service.booking.payment.gateway_response = paymentData.gateway_response;
-      
+      service.booking.payment.paid_amount = amount / 100;
+
       await service.save();
-      
       console.log("✅ Service updated via webhook");
-      
-      // Optional: Send confirmation email/SMS here
-      await sendBookingConfirmation(service);
-    } else {
-      console.log("ℹ️ Payment already processed, skipping update");
     }
   } catch (error) {
-    console.error("💥 Error processing successful payment webhook:", error);
+    console.error("💥 Webhook payment processing error:", error);
   }
 };
 
-// Helper function for failed payments
+// Helper: Handle Failed Payment
 const handleFailedPayment = async (paymentData) => {
   try {
     const { reference, gateway_response } = paymentData;
-    
-    console.log("❌ Processing failed payment:");
-    console.log("📄 Reference:", reference);
-    console.log("💬 Gateway response:", gateway_response);
-    
+
     const service = await Service.findOne({
       "booking.payment.reference": reference,
     });
-    
+
     if (service) {
-      console.log("✏️ Updating service to failed status");
       service.booking.paymentStatus = "failed";
       service.booking.payment.failure_reason = gateway_response;
       service.booking.payment.failed_at = new Date();
       await service.save();
-      
-      console.log("✅ Service updated to failed status");
-    } else {
-      console.log("❌ Service not found for failed payment:", reference);
+
+      console.log("✅ Service marked as failed payment");
     }
   } catch (error) {
-    console.error("💥 Error processing failed payment webhook:", error);
-  }
-};
-
-// Helper function for pending payments
-const handlePendingPayment = async (paymentData) => {
-  try {
-    const { reference } = paymentData;
-    
-    console.log("⏳ Processing pending payment:");
-    console.log("📄 Reference:", reference);
-    
-    const service = await Service.findOne({
-      "booking.payment.reference": reference,
-    });
-    
-    if (service) {
-      console.log("✏️ Keeping service in pending status");
-      service.booking.payment.last_pending_update = new Date();
-      await service.save();
-      
-      console.log("✅ Service pending status updated");
-    }
-  } catch (error) {
-    console.error("💥 Error processing pending payment webhook:", error);
-  }
-};
-
-// Helper function for sending confirmation (implement based on your notification system)
-const sendBookingConfirmation = async (service) => {
-  try {
-    console.log("📧 Sending booking confirmation for service:", service._id);
-    // TODO: Implement your email/SMS notification here
-    // This could be an email service, SMS service, etc.
-    
-    // Example implementation:
-    // await emailService.send({
-    //   to: service.user_email,
-    //   subject: 'Booking Confirmed',
-    //   template: 'booking-confirmation',
-    //   data: service
-    // });
-    
-    console.log("✅ Confirmation sent successfully");
-  } catch (error) {
-    console.error("💥 Error sending confirmation:", error);
+    console.error("💥 Failed payment processing error:", error);
   }
 };
 
 module.exports = {
   createCleaningService,
+  verifyPayment,
   getUserServices,
   getSingleService,
-  paystackPayment,
   cancelService,
+  updateServiceStatus,
   userCancelledServices,
-  getAllCompletedServices,
-  getAllUpcomingServices,
-  getAllPendingServices,
+  getUserPendingServices,
+  getUserConfirmedServices,
   getUserCompletedServices,
   getUserUpcomingServices,
-  getUserPendingServices,
   markTaskCompleted,
-  verifyPayment,
   handlePaystackWebhook,
 };
