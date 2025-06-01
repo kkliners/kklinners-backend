@@ -149,8 +149,7 @@ console.log("Request Body:", req.body);
         bookingDate,
         bookingTime,
         location,
-        confirmed:true,
-        paymentStatus: "pending",
+        paymentStatus: "paid",
         payment: {
           authorization_url,
           access_code,
