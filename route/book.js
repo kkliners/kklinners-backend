@@ -5,7 +5,7 @@ const {
   createCleaningService,
   verifyPayment,
   getSingleService,
-  paystackPayment,
+  
   cancelService,
   userCancelledServices,
   getAllCompletedServices,
@@ -42,7 +42,7 @@ route.get("/webhook-test", (req, res) => {
 
 // NON-PARAMETERIZED ROUTES NEXT
 route.post("/create-service", authMiddleware, createCleaningService);
-route.post("/paystack", authMiddleware, paystackPayment);
+
 route.post("/verify-payment", verifyPayment);
 route.get("/services/pending", isAdmin, authMiddleware, getAllPendingServices);
 route.get("/services/upcoming", isAdmin, getAllUpcomingServices);
