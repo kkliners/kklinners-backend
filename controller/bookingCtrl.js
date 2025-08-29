@@ -1,6 +1,6 @@
 const User = require("../model/user");
 const asyncHandler = require("express-async-handler");
-const Service = require("../model/cleaningService");
+
 const { Error } = require("mongoose");
 // ❌ REMOVED: const calculateServiceRate = require("../utils/calculateRate");
 const axios = require("axios");

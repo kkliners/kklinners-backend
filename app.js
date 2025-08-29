@@ -7,7 +7,7 @@ const userRoute = require("./route/user");
 const serviceRoute = require("./route/book");
 const cors = require("cors");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
-
+const houseRoutes = require("./route/house");
 const app = express();
 const port = process.env.PORT || 3002;
 
@@ -86,8 +86,8 @@ app.get("/health", (req, res) => {
 // API Routes
 app.use("/api/v1/auth", authRoute);
 app.use("/api/v1/user", userRoute);
-app.use("/api/v1/service", serviceRoute);
-
+//app.use("/api/v1/service", serviceRoute);
+app.use("/api/v1/house-cleaning", houseRoutes);
 // Root endpoint
 app.get("/", (req, res) => {
   res.status(200).json({
