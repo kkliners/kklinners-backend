@@ -22,13 +22,14 @@ const corsOptions = {
 
     const allowedOrigins = [
       "https://www.klinner.net.ng",
-      "https://klinner-web-app.vercel.app", // ← This should be allowed
+
       "http://localhost:3000",
       "http://localhost:3001",
       "http://127.0.0.1:3000",
       "http://127.0.0.1:3001",
       "https://localhost:3000",
       "https://pagead2.googlesyndication.com",
+      "https://klinner-web-app.vercel.app", // ← This should be allowed
     ];
 
     console.log(`🔍 CORS check for origin: ${origin}`); // Add this for debugging
