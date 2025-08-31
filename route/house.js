@@ -25,10 +25,10 @@ router.post("/calculate-price", calculatePrice);
 router.post("/book",  createHouseCleaningService);
 
 // POST /api/v1/cleaning/verify-payment - Verify cleaning service payment
-router.post("/verify-payment",  verifyCleaningPayment);
+router.post("/verify-payment",authMiddleware,  verifyCleaningPayment);
 
 // Alternative routes for backward compatibility
-router.post("/create",  createHouseCleaningService);
+router.post("/create",authMiddleware,  createHouseCleaningService);
 router.post("/verify",  verifyCleaningPayment);
 
 module.exports = router;
