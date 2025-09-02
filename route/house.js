@@ -1,34 +1,49 @@
-// routes/cleaningRoutes.js
+// routes/services.js
 const express = require("express");
 const router = express.Router();
+
 const {
+  createService,
+  verifyPayment,
+  getUserServices,
+  getAllServices,
+  getServiceById,
+  getServiceStats,
   createHouseCleaningService,
-  getCleaningOptions,
-  calculatePrice,
   verifyCleaningPayment,
-} = require("../controller/house-cleaning");
+} = require("../controller/services");
 
-// Import your auth middleware
-const authMiddleware = require("../middleware/authMiddleware");
+const { authMiddleware } = require("../middleware/authMiddleware");
 
-// Public routes (no authentication required)
+// Universal service creation - handles all service types (house_cleaning, laundry, move_out, repairs)
+router.post("/create", authMiddleware, createService);
 
-// GET /api/v1/cleaning/options - Get cleaning categories, packages, home sizes, and frequencies
-router.get("/options", getCleaningOptions);
+// Universal payment verification - handles all service types
+router.post("/verify-payment", authMiddleware, verifyPayment);
 
-// POST /api/v1/cleaning/calculate-price - Calculate price for cleaning service
-router.post("/calculate-price", calculatePrice);
+// Legacy house cleaning routes for backward compatibility
+router.post(
+  "/house-cleaning/create",
+  authMiddleware,
+  createHouseCleaningService
+);
+router.post(
+  "/house-cleaning/verify-payment",
+  authMiddleware,
+  verifyCleaningPayment
+);
 
-// Protected routes (authentication required)
 
-// POST /api/v1/cleaning/book - Create/book house cleaning service
-router.post("/book",  createHouseCleaningService);
+// GET /api/v1/services/my-services - Get user's services
+router.get('/my-services', authMiddleware, getUserServices);
 
-// POST /api/v1/cleaning/verify-payment - Verify cleaning service payment
-router.post("/verify-payment",authMiddleware,  verifyCleaningPayment);
+// GET /api/v1/services/all - Get all services (Admin only)
+router.get('/all', authMiddleware, getAllServices);
 
-// Alternative routes for backward compatibility
-router.post("/create",authMiddleware,  createHouseCleaningService);
-router.post("/verify",  verifyCleaningPayment);
+// GET /api/v1/services/stats - Get service statistics (Admin only)
+router.get('/stats', authMiddleware, getServiceStats);
+
+// GET /api/v1/services/:id - Get single service by ID
+router.get('/:id', authMiddleware, getServiceById);
 
 module.exports = router;

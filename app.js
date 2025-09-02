@@ -3,8 +3,7 @@ const express = require("express");
 const morgan = require("morgan");
 const dbConnect = require("./config/dbConnect");
 const authRoute = require("./route/auth");
-const userRoute = require("./route/user");
-const serviceRoute = require("./route/book");
+const userRoute = require("./route/user")
 const cors = require("cors");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 const houseRoutes = require("./route/house");
@@ -87,8 +86,8 @@ app.get("/health", (req, res) => {
 // API Routes
 app.use("/api/v1/auth", authRoute);
 app.use("/api/v1/user", userRoute);
-//app.use("/api/v1/service", serviceRoute);
-app.use("/api/v1/house-cleaning", houseRoutes);
+//app.use("/api/v1/service", serviceRoute)
+app.use("/api/v1/services", houseRoutes);
 // Root endpoint
 app.get("/", (req, res) => {
   res.status(200).json({
