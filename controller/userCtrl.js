@@ -5,6 +5,17 @@ const {token }= require('../config/jwt')
 const sendEmail = require('../utils/email')
 const cloudinary = require('../utils/cloudinary');
 const upload = require('../utils/multerUpload')
+// Emails carry only the code: both the sign-up and reset screens ask for 4 digits, not a link.
+const codeEmail = (to, subject, intro, code) => ({
+  to,
+  subject,
+  text: `${intro} ${code}`,
+  html: `<p>${intro}</p><p style="font-size:32px;font-weight:700;letter-spacing:8px;text-align:center;margin:24px 0;">${code}</p>`,
+});
+
+const verificationEmail = (to, otp) =>
+  codeEmail(to, 'Your Kliner verification code', 'Enter this code to verify your email:', otp);
+
 function generateOTP() {
   // Generate a 4-digit random OTP
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -593,19 +604,14 @@ const registerUser = asyncHandler(async (req, res, next) => {
     const newUser = await User.create(req.body);
 
     // Generate and save OTP
-    const otp = generateOTP(); // Implement this function
+    const otp = generateOTP();
     newUser.otp = otp;
+    newUser.otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
+    newUser.otpAttempts = 0;
     await newUser.save();
 
     // Send verification email with OTP
-    const resetUrl = `Use this ${otp} to verify your email`;
-    const emailData = {
-      to: email,
-      subject: 'Verify Email',
-      text: `Use this ${otp} to verify your email`,
-      html: resetUrl,
-    };
-    await sendEmail(emailData, req, res);
+    await sendEmail(verificationEmail(email, otp), req, res);
 
     res.status(201).json({
       success: true,
@@ -641,52 +647,89 @@ const verifyEmail = asyncHandler(async (req, res, next) => {
   try {
     const { email, otp } = req.body;
 
-    // Validate required fields
-    if (!email || !otp) {
-      const error = new Error('Email and OTP are required');
-      error.statusCode = 400;
-      throw error;
+    if (typeof email !== 'string' || !email || !otp) {
+      throw authError('Email and OTP are required', 400);
     }
 
-    // Find the user by email
-    const user = await User.findOne({ email });
+    const existing = await User.findOne({ email }).select('isEmailVerified');
+    if (!existing) throw authError('User not found', 404);
+    if (existing.isEmailVerified) throw authError('This email is already verified. Please log in.', 400);
 
-    // If the user doesn't exist, return an error
-    if (!user) {
-      const error = new Error('User not found');
-      error.statusCode = 404;
-      throw error;
+    // A 4-digit code is guessable, so each try is counted first (atomically, so parallel
+    // guesses can't slip past the limit) and the code is destroyed after too many wrong ones.
+    const user = await User.findOneAndUpdate(
+      {
+        email,
+        otp: { $exists: true, $nin: [null, ''] },
+        otpExpiresAt: { $gt: new Date() },
+        otpAttempts: { $lt: MAX_OTP_ATTEMPTS },
+      },
+      { $inc: { otpAttempts: 1 } },
+      { new: true }
+    );
+    if (!user) throw authError('This code has expired. Please request a new one.', 401);
+
+    if (String(otp) !== user.otp) {
+      if (user.otpAttempts >= MAX_OTP_ATTEMPTS) {
+        await User.updateOne({ _id: user._id }, { $unset: { otp: 1 } }); // keep the issue time so the resend wait still applies
+        throw authError('Too many wrong tries. Please request a new code.', 401);
+      }
+      throw authError('Invalid OTP', 401);
     }
 
-    // Check if the provided OTP matches the stored OTP
-    if (user.otp !== otp) {
-      const error = new Error('Invalid OTP');
-      error.statusCode = 400;
-      throw error;
-    }
+    const verified = await User.findOneAndUpdate(
+      { _id: user._id },
+      { $set: { isEmailVerified: true, otpAttempts: 0 }, $unset: { otp: 1, otpExpiresAt: 1 } },
+      { new: true }
+    );
 
-    // Check if the OTP is still valid (not expired)
-    if (user.otp?.expiresAt && user.otp.expiresAt < new Date()) {
-      const error = new Error('OTP has expired. Please request a new one');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    // Mark the email as verified
-    user.isEmailVerified = true;
-
-    // Invalidate the OTP
-    user.otp = undefined; 
-
-    // Save the updated user
-    await user.save();
-
-    // Respond with a success message
     res.status(200).json({
       success: true,
       message: 'Email verification successful',
-      data: user
+      data: verified,
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/v1/auth/resend-otp  { email } — emails a fresh code; the old one stops working
+const resendVerificationOtp = asyncHandler(async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      const error = new Error('Email is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      const error = new Error(`User with email ${email} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+    if (user.isEmailVerified) {
+      const error = new Error('This email is already verified. Please log in.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Fresh codes can't be requested non-stop, since each one resets the wrong-try count
+    const issuedAt = user.otpExpiresAt && user.otpExpiresAt.getTime() - OTP_TTL_MS;
+    if (issuedAt && Date.now() - issuedAt < OTP_RESEND_WAIT_MS) {
+      throw authError('Please wait a minute before requesting another code.', 429);
+    }
+
+    const otp = generateOTP();
+    user.otp = otp;
+    user.otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
+    user.otpAttempts = 0;
+    await user.save();
+    await sendEmail(verificationEmail(email, otp), req, res);
+
+    res.status(200).json({ success: true, message: 'Verification code sent' });
   } catch (error) {
     next(error);
   }
@@ -1075,41 +1118,57 @@ const unBlockUser = asyncHandler(async (req, res, next) => {
   }
 });
 
+const MAX_OTP_ATTEMPTS = 5;
+const OTP_TTL_MS = 10 * 60 * 1000;
+const OTP_RESEND_WAIT_MS = 60 * 1000;
+
+const MAX_RESET_ATTEMPTS = 5;
+const RESET_CODE_TTL_MS = 10 * 60 * 1000;
+const RESET_RESEND_WAIT_MS = 60 * 1000;
+
+const authError = (message, statusCode) => Object.assign(new Error(message), { statusCode });
+
+// Checks a password reset code and returns the user. A 4-digit code is guessable, so each
+// try is counted first (atomically, so parallel guesses can't slip past the limit) and the
+// code is destroyed after too many wrong ones.
+const checkResetCode = async (email, pin) => {
+  if (typeof email !== 'string' || !email || !pin) {
+    throw authError('Email and code are required', 400);
+  }
+
+  const user = await User.findOneAndUpdate(
+    {
+      email,
+      verificationTokenExpires: { $exists: true, $ne: null },
+      passwordResetExpires: { $gt: new Date() },
+      passwordResetAttempts: { $lt: MAX_RESET_ATTEMPTS },
+    },
+    { $inc: { passwordResetAttempts: 1 } },
+    { new: true }
+  );
+  if (!user) throw authError('This code has expired. Please request a new one.', 401);
+
+  if (String(pin) !== String(user.verificationTokenExpires)) {
+    if (user.passwordResetAttempts >= MAX_RESET_ATTEMPTS) {
+      await User.updateOne(
+        { _id: user._id },
+        { $unset: { verificationTokenExpires: 1 } } // keep the issue time so the resend wait still applies
+      );
+      throw authError('Too many wrong tries. Please request a new code.', 401);
+    }
+    throw authError('Incorrect code', 401);
+  }
+
+  await User.updateOne({ _id: user._id }, { $set: { passwordResetAttempts: 0 } });
+  return user;
+};
+
 // Verify PIN for Password Reset
 const passPinVerification = asyncHandler(async (req, res, next) => {
   try {
     const { email, pin } = req.body;
 
-    // Validate required fields
-    if (!email || !pin) {
-      const error = new Error('Email and PIN are required');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    // Find the user by email
-    const user = await User.findOne({ email });
-    
-    if (!user) {
-      const error = new Error('User not found');
-      error.statusCode = 404;
-      throw error;
-    }
-
-    // Check if the provided PIN matches the stored PIN
-    if (pin != user.verificationTokenExpires) {
-      const error = new Error('Incorrect PIN');
-      error.statusCode = 401;
-      throw error;
-    }
-
-    // Check if the PIN has expired
-    const currentTimestamp = Date.now();
-    if (user.passwordResetExpires && currentTimestamp > user.passwordResetExpires) {
-      const error = new Error('PIN has expired');
-      error.statusCode = 401;
-      throw error;
-    }
+    await checkResetCode(email, pin);
 
     res.status(200).json({ 
       success: true, 
@@ -1123,7 +1182,7 @@ const passPinVerification = asyncHandler(async (req, res, next) => {
 // Change Password
 const changePassword = asyncHandler(async (req, res, next) => {
   try {
-    const { email, password, confirmPassword } = req.body;
+    const { email, pin, password, confirmPassword } = req.body;
 
     // Validate required fields
     if (!email || !password || !confirmPassword) {
@@ -1138,17 +1197,14 @@ const changePassword = asyncHandler(async (req, res, next) => {
       throw error;
     }
 
-    // Find the user in the database based on the email
-    const user = await User.findOne({ email });
+    // The reset code is the proof that this person owns the email
+    const user = await checkResetCode(email, pin);
 
-    if (!user) {
-      const error = new Error('User not found');
-      error.statusCode = 404;
-      throw error;
-    }
-
-    // Update the password
+    // Update the password; the code can't be used again
     user.password = password;
+    user.verificationTokenExpires = undefined;
+    user.passwordResetExpires = undefined;
+    user.passwordResetAttempts = 0;
     const updatedUser = await user.save();
     
     res.status(200).json({ 
@@ -1166,7 +1222,7 @@ const forgotPasswordToken = asyncHandler(async (req, res, next) => {
   try {
     const { email } = req.body;
 
-    if (!email) {
+    if (typeof email !== 'string' || !email) {
       const error = new Error('Email is required');
       error.statusCode = 400;
       throw error;
@@ -1181,18 +1237,23 @@ const forgotPasswordToken = asyncHandler(async (req, res, next) => {
       throw error;
     }
 
+    // New codes reset the wrong-try count, so they can't be requested non-stop
+    const issuedAt = user.passwordResetExpires && user.passwordResetExpires.getTime() - RESET_CODE_TTL_MS;
+    if (issuedAt && Date.now() - issuedAt < RESET_RESEND_WAIT_MS) {
+      throw authError('Please wait a minute before requesting another code.', 429);
+    }
+
     // Create verification token
     const token = await user.createVerificationToken();
     await user.save();
     
     // Prepare email content
-    const resetUrl = `Hi, please follow this link to reset your password. This token is valid for 10 minutes: ${token}`;
-    const emailData = {
-      to: email,
-      subject: 'Forgot Password',
-      text: 'hey user',
-      html: resetUrl,
-    };
+    const emailData = codeEmail(
+      email,
+      'Your Kliner password reset code',
+      'Enter this code to reset your password. It is valid for 10 minutes:',
+      token
+    );
     
     // Send email
     await sendEmail(emailData, req, res);
@@ -1200,7 +1261,6 @@ const forgotPasswordToken = asyncHandler(async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Password verification pin sent successfully',
-      data: { token }
     });
   } catch (error) {
     next(error);
@@ -1224,6 +1284,7 @@ module.exports = {
   forgotPasswordToken,
   passPinVerification,
   verifyEmail,
+  resendVerificationOtp,
   createVerificationPin,
   verifyPin,
 };

@@ -2,10 +2,11 @@ const express = require ('express')
 require('../config/passport-settup')
 const route = express.Router()
 
-const {registerUser,loginUser,passPinVerification,verifyEmail,forgotPasswordToken,changePassword,userImageUpdate } = require('../controller/userCtrl')
+const {registerUser,loginUser,passPinVerification,verifyEmail,resendVerificationOtp,forgotPasswordToken,changePassword,userImageUpdate } = require('../controller/userCtrl')
 
 route.post('/register', registerUser)
 route.post('/verifyotp', verifyEmail)
+route.post('/resend-otp', resendVerificationOtp)
 route.post('/login', loginUser)
 
 route.post('/upload',userImageUpdate )

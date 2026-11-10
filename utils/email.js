@@ -78,8 +78,7 @@ const sendEmail = asyncHandler(async (data, req, res) => {
                 </div>
                 <div class="content">
                     <p>Dear ${data.to},</p>
-                    <p>${data.text}</p>
-                    ${data.html ? data.html : ""}
+                    ${data.html ? data.html : `<p>${data.text}</p>`}
                     <p>Best regards,</p>
                     <p>The Klinner Team</p>
                 </div>

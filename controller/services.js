@@ -2,16 +2,53 @@
 const axios = require("axios");
 const Service = require("../model/house"); // Update to use universal Service model
 const User = require("../model/user");
+const { calculatePrice, normalizeFrequency } = require("../utils/pricing");
+const { isServiceArea, LAUNCH_DISTRICT } = require("../config/marketplace");
+const crypto = require("crypto");
+const { estimateMinutes, defaultMinutes } = require("../utils/duration");
+const { safeReturnOrigin } = require("../utils/returnUrl");
+const { PaystackUnavailable, settlePayment } = require("../utils/payments");
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
+// Same shape as a fresh booking, for a booking that was already created
+const respondWithExisting = (res, s) => {
+  const pay = s.booking.payment || {};
+  return res.status(200).json({
+    success: true,
+    existing: true,
+    message: "This booking was already created.",
+    data: {
+      service: s,
+      alreadyPaid: s.booking.paymentStatus === "paid",
+      payment: {
+        authorization_url: pay.authorization_url,
+        access_code: pay.access_code,
+        reference: pay.reference,
+        amount_naira: s.serviceRate,
+        amount_kobo: pay.amount_charged_kobo,
+      },
+    },
+  });
+};
+
+// Copies of the same booking request that arrive together wait for the first one, instead of each
+// starting its own Paystack payment. (The database's unique key is the final guard across servers.)
+const inFlight = new Map();
+
 const createService = async (req, res) => {
+  let flightId = null;
+  let release = () => {};
   try {
     console.log("🚀 ===== CREATE UNIVERSAL SERVICE =====");
-    console.log("📥 Request body:", JSON.stringify(req.body, null, 2));
 
-    const { user_id, serviceType, serviceData, bookingDetails, customerInfo } =
-      req.body;
+    const { serviceType, serviceData, bookingDetails, customerInfo, idempotencyKey } = req.body;
+
+    // Bookings are always made for the logged-in account, never for an id the browser sends
+    if (req.body.user_id && req.body.user_id !== req.user.user_id) {
+      return res.status(403).json({ success: false, message: "You can only book for your own account." });
+    }
+    const user_id = req.user.user_id;
 
     // Validate required fields
     if (!user_id || !serviceType || !serviceData || !bookingDetails) {
@@ -23,13 +60,12 @@ const createService = async (req, res) => {
       });
     }
 
-    // Validate service type - ADDED GARDENING
     const validServiceTypes = [
       "house_cleaning",
       "laundry",
       "move_out",
       "repairs",
-      "gardening", // ADDED THIS
+      "gardening",
     ];
     if (!validServiceTypes.includes(serviceType)) {
       return res.status(400).json({
@@ -40,7 +76,7 @@ const createService = async (req, res) => {
       });
     }
 
-    const { bookingDate, bookingTime, location } = bookingDetails;
+    const { bookingDate, bookingTime, location, area } = bookingDetails;
     if (!bookingDate || !bookingTime || !location) {
       return res.status(400).json({
         success: false,
@@ -49,17 +85,15 @@ const createService = async (req, res) => {
       });
     }
 
-    // Find user
-    const user = await User.findOne({ user_id });
-    if (!user) {
-      console.log("❌ User not found:", user_id);
-      return res.status(404).json({
+    // We currently only operate in the launch district
+    if (!isServiceArea(area)) {
+      return res.status(400).json({
         success: false,
-        message: "User not found",
+        message: `Kliner is currently only available in ${LAUNCH_DISTRICT}. Please choose a ${LAUNCH_DISTRICT} area.`,
       });
     }
 
-    console.log("✅ User found:", user.email);
+    const user = req.user;
 
     // Generate unique service_id
     const generateServiceId = () => {
@@ -68,13 +102,74 @@ const createService = async (req, res) => {
       return `${serviceType.toUpperCase()}-${timestamp}-${random}`;
     };
 
-    // Use the estimated price from frontend (no server-side calculation)
-    const finalServiceRate = serviceData.estimatedPrice || 0;
+    const serviceId = generateServiceId();
+
+    // Price is ALWAYS calculated on the server (utils/pricing.js) in naira.
+    // The frontend estimate is only kept for reference/debugging.
+    if (serviceData.frequency) {
+      serviceData.frequency = normalizeFrequency(serviceData.frequency);
+    }
+    const pricing = calculatePrice(serviceType, serviceData);
+    const finalServiceRate = pricing.total;
     const koboAmount = Math.round(finalServiceRate * 100);
 
-    console.log("💰 ===== PRICING FROM FRONTEND =====");
-    console.log("💰 Service rate (Naira):", finalServiceRate);
-    console.log("💰 Paystack amount (kobo):", koboAmount);
+    if (finalServiceRate <= 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Could not calculate a price for this booking. Please check your selections.",
+      });
+    }
+
+    if (
+      serviceData.estimatedPrice !== undefined &&
+      Number(serviceData.estimatedPrice) !== finalServiceRate
+    ) {
+      console.warn(
+        `⚠️ Frontend price ₦${serviceData.estimatedPrice} differs from server price ₦${finalServiceRate}; charging server price`
+      );
+    }
+
+    console.log("💰 Service rate (₦):", finalServiceRate, "| kobo:", koboAmount);
+
+    // ---- Never create the same booking twice ----
+    const key = typeof idempotencyKey === "string" && /^[A-Za-z0-9_-]{8,80}$/.test(idempotencyKey) ? idempotencyKey : null;
+    const bookingDay = new Date(bookingDate);
+    const sameBooking = (s) =>
+      s.serviceType === serviceType &&
+      s.serviceRate === finalServiceRate &&
+      s.booking.bookingTime === bookingTime &&
+      s.booking.area === area &&
+      new Date(s.booking.bookingDate).getTime() === bookingDay.getTime();
+
+    if (key) {
+      flightId = `${user_id}:${key}`;
+      while (inFlight.has(flightId)) await inFlight.get(flightId); // another copy is already being handled
+      const gate = new Promise((resolve) => (release = resolve));
+      inFlight.set(flightId, gate);
+    }
+
+    if (key) {
+      const prior = await Service.findOne({ user_id, idempotencyKey: key });
+      if (prior) {
+        if (!sameBooking(prior)) {
+          return res.status(409).json({ success: false, message: "That request was already used for a different booking. Please start the booking again." });
+        }
+        return respondWithExisting(res, prior);
+      }
+    }
+    // The same unpaid booking sent again within 30 minutes is the same booking: hand back the one that exists
+    const recent = await Service.findOne({
+      user_id,
+      serviceType,
+      serviceRate: finalServiceRate,
+      "booking.paymentStatus": "pending",
+      "booking.bookingTime": bookingTime,
+      "booking.area": area,
+      "booking.bookingDate": bookingDay,
+      createdAt: { $gt: new Date(Date.now() - 30 * 60 * 1000) },
+    });
+    if (recent) return respondWithExisting(res, recent);
 
     // Check Paystack configuration
     if (!PAYSTACK_SECRET_KEY) {
@@ -85,17 +180,23 @@ const createService = async (req, res) => {
       });
     }
 
+    const returnBase = safeReturnOrigin(req.body.returnOrigin);
+
     // Prepare Paystack payload
     const paystackPayload = {
       email: user.email,
       amount: koboAmount,
+      currency: "NGN",
+      // Back to the app after paying, and back to My Bookings if the customer cancels
+      callback_url: `${returnBase}/booking-confirmation`,
       metadata: {
+        cancel_action: `${returnBase}/booking/bookings`,
         user_id: user_id,
         service_type: serviceType,
         service_category: serviceData.category || serviceData.repairType,
         booking_date: bookingDate,
         estimated_price: finalServiceRate,
-        service_id: generateServiceId(), // Include service_id in metadata
+        service_id: serviceId,
       },
     };
 
@@ -108,6 +209,7 @@ const createService = async (req, res) => {
       "https://api.paystack.co/transaction/initialize",
       paystackPayload,
       {
+        timeout: 15000,
         headers: {
           Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
           "Content-Type": "application/json",
@@ -128,7 +230,8 @@ const createService = async (req, res) => {
 
     // Prepare service document
     const serviceDoc = {
-      service_id: generateServiceId(), // ADD UNIQUE SERVICE_ID
+      ...(key ? { idempotencyKey: key } : {}),
+      service_id: serviceId,
       user_id: user.user_id,
       serviceName: getServiceName(serviceType),
       serviceCategory: serviceData.category || serviceData.repairType,
@@ -139,8 +242,10 @@ const createService = async (req, res) => {
         bookingDate: new Date(bookingDate),
         bookingTime: bookingTime,
         location,
+        area,
         paymentStatus: "pending",
         progress: "pending",
+        expectedMinutes: estimateMinutes(serviceType, serviceData),
         payment: {
           authorization_url,
           access_code,
@@ -160,9 +265,16 @@ const createService = async (req, res) => {
           serviceData.specialInstructions ||
           "",
       },
+      customerSecurity: {
+        belongingsAcknowledged: Boolean(req.body.customerSecurity?.belongingsAcknowledged),
+        limitedAccessAcknowledged: Boolean(req.body.customerSecurity?.limitedAccessAcknowledged),
+        accessNotes: String(req.body.customerSecurity?.accessNotes || "").trim().slice(0, 500),
+        visitorCode: "",
+        issueReports: [],
+      },
       pricingBreakdown: {
-        total: finalServiceRate,
-        frontendCalculated: finalServiceRate,
+        ...pricing,
+        frontendCalculated: Number(serviceData.estimatedPrice) || undefined,
       },
       createdAt: new Date(),
     };
@@ -204,6 +316,12 @@ const createService = async (req, res) => {
   } catch (error) {
     console.error("💥 Service creation error:", error);
 
+    // Two copies of the same request arrived at once: the second one gets the first one's booking
+    if (error.code === 11000 && error.keyPattern?.idempotencyKey && req.user && req.body?.idempotencyKey) {
+      const winner = await Service.findOne({ user_id: req.user.user_id, idempotencyKey: req.body.idempotencyKey });
+      if (winner) return respondWithExisting(res, winner);
+    }
+
     // Handle MongoDB duplicate key errors
     if (error.code === 11000) {
       console.error("💥 Duplicate key error:", error.keyPattern);
@@ -211,6 +329,15 @@ const createService = async (req, res) => {
         success: false,
         message: "Duplicate service identifier. Please try again.",
         details: "A service with this identifier already exists",
+      });
+    }
+
+    // Couldn't reach Paystack at all: nothing was charged, and trying again is safe
+    if (axios.isAxiosError(error) && !error.response) {
+      return res.status(503).json({
+        success: false,
+        retryable: true,
+        message: "We couldn't reach the payment service. Nothing was charged. Please try again in a moment.",
       });
     }
 
@@ -228,6 +355,11 @@ const createService = async (req, res) => {
       message: "Service creation failed",
       details: error.message,
     });
+  } finally {
+    if (flightId) {
+      inFlight.delete(flightId);
+      release();
+    }
   }
 };
 
@@ -236,124 +368,82 @@ const createService = async (req, res) => {
 
 
 // Universal payment verification
+// What the confirmation page shows. It's public, so nothing personal (no address or phone).
+const paymentReceipt = (service) => ({
+  service: service.serviceCategory || service.serviceName,
+  bookingDate: service.booking.bookingDate,
+  bookingTime: service.booking.bookingTime,
+  amount: service.serviceRate,
+  paymentStatus: service.booking.paymentStatus,
+  reference: service.booking.payment.reference,
+});
+
+// Public on purpose: the customer may come back from Paystack without a session. It only ever
+// records a payment that Paystack itself confirms, in full (see utils/payments.js).
 const verifyPayment = async (req, res) => {
   try {
     const { reference } = req.body;
-
-    if (!reference) {
-      return res.status(400).json({
-        success: false,
-        message: "Transaction reference required",
-      });
+    if (typeof reference !== "string" || !reference || reference.length > 100) {
+      return res.status(400).json({ success: false, message: "Transaction reference required" });
     }
 
-    console.log("🔍 Verifying service payment:", reference);
-
-    // Check if already verified
-    const existingVerifiedService = await Service.findOne({
-      "booking.payment.reference": reference,
-      "booking.paymentStatus": "paid",
-    });
-
-    if (existingVerifiedService) {
-      return res.status(200).json({
-        success: true,
-        message: "Payment already verified",
-        data: existingVerifiedService,
-        alreadyVerified: true,
-      });
+    const result = await settlePayment(reference);
+    switch (result.outcome) {
+      case "paid":
+        return res.status(200).json({
+          success: true,
+          message: result.already ? "Payment already verified" : "Payment verified successfully",
+          alreadyVerified: !!result.already,
+          data: paymentReceipt(result.service),
+        });
+      case "unknown_reference":
+      case "not_found":
+        return res.status(404).json({ success: false, message: "Payment not found" });
+      case "not_paid":
+        return res.status(400).json({ success: false, message: "Payment not completed", payment_status: result.status });
+      case "mismatch":
+        return res.status(409).json({
+          success: false,
+          code: "amount_mismatch",
+          message: "We received your payment, but the amount doesn't match this booking. Our team will sort it out. You don't need to pay again.",
+        });
+      default:
+        return res.status(500).json({ success: false, message: "Payment verification failed" });
     }
-
-    // Verify with Paystack
-    const response = await axios.get(
-      `https://api.paystack.co/transaction/verify/${reference}`,
-      {
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-        },
-      }
-    );
-
-    const paymentData = response.data.data;
-
-    if (paymentData.status !== "success") {
-      return res.status(400).json({
-        success: false,
-        message: "Payment not successful",
-        payment_status: paymentData.status,
-      });
-    }
-
-    // Find service
-    const service = await Service.findOne({
-      "booking.payment.reference": reference,
-    });
-
-    if (!service) {
-      return res.status(404).json({
-        success: false,
-        message: "Service not found for this transaction",
-      });
-    }
-
-    // Verify amounts
-    const expectedAmountKobo = service.booking.payment.amount_charged_kobo;
-    const paidAmountKobo = paymentData.amount;
-
-    if (paidAmountKobo !== expectedAmountKobo) {
-      console.error("❌ Amount mismatch!");
-      return res.status(400).json({
-        success: false,
-        message: "Payment amount verification failed",
-        expected_kobo: expectedAmountKobo,
-        paid_kobo: paidAmountKobo,
-      });
-    }
-
-    // Update to paid status
-    const updatedService = await Service.findByIdAndUpdate(
-      service._id,
-      {
-        $set: {
-          "booking.paymentStatus": "paid",
-          "booking.progress": "confirmed",
-          "booking.payment.verified_at": new Date(),
-          "booking.payment.paystack_transaction_id": paymentData.id,
-          "booking.payment.paid_amount_kobo": paidAmountKobo,
-          "booking.payment.paid_amount_naira": paidAmountKobo / 100,
-        },
-      },
-      { new: true }
-    );
-
-    console.log("✅ Service payment verified successfully");
-
-    return res.status(200).json({
-      success: true,
-      message: `${getServiceName(
-        service.serviceType
-      )} payment verified successfully`,
-      data: {
-        service_id: updatedService._id,
-        service_type: updatedService.serviceType,
-        service_category: updatedService.serviceCategory,
-        payment_status: updatedService.booking.paymentStatus,
-        booking_status: updatedService.booking.progress,
-        amount_paid_naira: paidAmountKobo / 100,
-        verified_at: updatedService.booking.payment.verified_at,
-        booking_details: {
-          date: updatedService.booking.bookingDate,
-          time: updatedService.booking.bookingTime,
-          location: updatedService.booking.location,
-        },
-      },
-    });
   } catch (error) {
+    if (error instanceof PaystackUnavailable) {
+      return res.status(503).json({
+        success: false,
+        retryable: true,
+        message: "We couldn't reach the payment service just now. If you've paid, your money is safe. Please check again in a moment.",
+      });
+    }
     console.error("💥 Service payment verification error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Payment verification failed",
-    });
+    return res.status(500).json({ success: false, message: "Payment verification failed" });
+  }
+};
+
+// Paystack tells us about a payment itself, so it's recorded even if the customer never comes back.
+// The signature proves the message really is from Paystack.
+const paystackWebhook = async (req, res) => {
+  const signature = req.headers["x-paystack-signature"];
+  if (!PAYSTACK_SECRET_KEY || !req.rawBody || typeof signature !== "string") return res.sendStatus(401);
+
+  const expected = crypto.createHmac("sha512", PAYSTACK_SECRET_KEY).update(req.rawBody).digest("hex");
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.sendStatus(401);
+
+  try {
+    const event = req.body;
+    if (event?.event === "charge.success" && event.data?.reference) {
+      const result = await settlePayment(String(event.data.reference), { tx: event.data });
+      console.log(`💳 Webhook ${event.data.reference}: ${result.outcome}`);
+    }
+    return res.sendStatus(200); // anything else is fine to ignore: acknowledging stops Paystack resending
+  } catch (error) {
+    console.error("Webhook error:", error);
+    return res.sendStatus(500); // Paystack will try again
   }
 };
 
@@ -364,6 +454,7 @@ const getServiceName = (serviceType) => {
     laundry: "Laundry Service",
     move_out: "Moving Service",
     repairs: "Repair Service",
+    gardening: "Gardening Service",
   };
   return serviceNames[serviceType] || "Unknown Service";
 };
@@ -395,8 +486,8 @@ const buildServiceDetails = (serviceType, serviceData) => {
       serviceDetails.laundryDetails = {
         category: serviceData.category,
         service: serviceData.service,
-        itemCount: serviceData.itemCount,
-        estimatedWeight: Math.max(1, Math.floor(serviceData.itemCount / 3)),
+        itemCount: Number(serviceData.itemCount) || 0,
+        estimatedWeight: Math.max(1, Math.floor((Number(serviceData.itemCount) || 0) / 3)),
         pickupTime: serviceData.pickupTime,
         specialInstructions: serviceData.specialInstructions || "",
         turnaround: serviceData.turnaround,
@@ -430,6 +521,30 @@ const buildServiceDetails = (serviceType, serviceData) => {
         warrantyPeriod: "90 days",
       };
       break;
+
+    case "gardening": {
+      // Model stores services as { "Lawn Mowing": 1, ... }
+      const serviceNames = {
+        "lawn-mowing": "Lawn Mowing",
+        "hedge-trimming": "Hedge Trimming",
+        weeding: "Weeding",
+        planting: "Planting",
+        pruning: "Pruning",
+        "leaf-removal": "Leaf Removal",
+      };
+      const services = {};
+      (serviceData.services || []).forEach((id) => {
+        if (serviceNames[id]) services[serviceNames[id]] = 1;
+      });
+      serviceDetails.gardeningDetails = {
+        category: serviceData.category,
+        services,
+        gardenSize: serviceData.gardenSize,
+        frequency: serviceData.frequency,
+        specialInstructions: serviceData.specialInstructions || "",
+      };
+      break;
+    }
   }
 
   return serviceDetails;
@@ -451,6 +566,9 @@ const buildSchedulingDetails = (serviceType, serviceData) => {
     case "repairs":
       details.appointmentWindow = serviceData.urgency;
       break;
+    case "gardening":
+      details.recurringSchedule = serviceData.frequency;
+      break;
   }
 
   return details;
@@ -464,6 +582,8 @@ const createHouseCleaningService = async (req, res) => {
     serviceData: req.body.cleaningData,
     bookingDetails: req.body.bookingDetails,
     customerInfo: req.body.customerInfo,
+    idempotencyKey: req.body.idempotencyKey,
+    returnOrigin: req.body.returnOrigin,
   };
   req.body = transformedBody;
   return createService(req, res);
@@ -556,47 +676,14 @@ const getUserServices = async (req, res) => {
 
     console.log(`✅ Found ${services.length} services (${totalCount} total)`);
 
-    // Format services for response
-    const formattedServices = services.map(service => ({
-      id: service._id,
-      service_id: service.service_id,
-      serviceName: service.serviceName,
-      serviceType: service.serviceType,
-      serviceCategory: service.serviceCategory,
-      serviceRate: service.serviceRate,
-      status: service.booking.progress,
-      paymentStatus: service.booking.paymentStatus,
-      bookingDate: service.booking.bookingDate,
-      bookingTime: service.booking.bookingTime,
-      location: service.booking.location,
-      createdAt: service.createdAt,
-      updatedAt: service.updatedAt,
-      // Include service-specific details based on type
-      ...(service.serviceType === 'house_cleaning' && {
-        roomsCount: service.serviceDetails?.cleaningDetails?.roomsCount || 0,
-        package: service.serviceDetails?.cleaningDetails?.package,
-        frequency: service.serviceDetails?.cleaningDetails?.frequency,
-      }),
-      ...(service.serviceType === 'gardening' && {
-        servicesCount: service.serviceDetails?.gardeningDetails?.servicesCount || 0,
-        package: service.serviceDetails?.gardeningDetails?.package,
-        gardenSize: service.serviceDetails?.gardeningDetails?.gardenSize,
-        frequency: service.serviceDetails?.gardeningDetails?.frequency,
-      }),
-      ...(service.serviceType === 'laundry' && {
-        itemCount: service.serviceDetails?.laundryDetails?.itemCount || 0,
-        service: service.serviceDetails?.laundryDetails?.service,
-      }),
-      ...(service.serviceType === 'repairs' && {
-        repairType: service.serviceDetails?.repairDetails?.repairType,
-        urgency: service.serviceDetails?.repairDetails?.urgency,
-      }),
-    }));
+    const { formatCustomerService } = require("../utils/customerJobSecurity");
+    const formattedServices = services.map((service) => formatCustomerService(service));
 
     return res.status(200).json({
       success: true,
       message: "Services retrieved successfully",
       data: {
+        serverTime: new Date().toISOString(),
         services: formattedServices,
         pagination: {
           currentPage: parseInt(page),
@@ -789,6 +876,11 @@ const getAllServices = async (req, res) => {
       bookingDate: service.booking.bookingDate,
       bookingTime: service.booking.bookingTime,
       location: service.booking.location,
+      area: service.booking.area,
+      partnerName: service.serviceProvider?.providerName || null,
+      partnerPhone: ["accepted", "in_progress", "completion_requested"].includes(service.booking.progress)
+        ? service.serviceProvider?.providerPhone
+        : null,
       createdAt: service.createdAt,
       updatedAt: service.updatedAt,
       customerInfo: {
@@ -887,11 +979,14 @@ const getServiceById = async (req, res) => {
 
     console.log("✅ Service found:", service.serviceName);
 
+    const { formatCustomerService } = require("../utils/customerJobSecurity");
+    const payload = isAdmin ? service : formatCustomerService(service);
+
     return res.status(200).json({
       success: true,
       message: "Service retrieved successfully",
       data: {
-        service,
+        service: payload,
         isOwner,
         isAdmin,
       },
@@ -1033,6 +1128,51 @@ const getServiceStats = async (req, res) => {
   }
 };
 
+// POST /api/v1/services/:id/owner-issue — property owner reports a problem on a paid job
+const reportOwnerIssue = async (req, res) => {
+  try {
+    const user_id = req.user?.user_id || req.user?.id;
+    const message = String(req.body?.message || "").trim();
+    if (message.length < 10) {
+      return res.status(400).json({ success: false, message: "Describe what happened (at least 10 characters)." });
+    }
+
+    const service = await Service.findById(req.params.id);
+    if (!service) return res.status(404).json({ success: false, message: "Booking not found." });
+    if (service.user_id !== user_id) {
+      return res.status(403).json({ success: false, message: "You can only report issues on your own bookings." });
+    }
+    if (service.booking.paymentStatus !== "paid") {
+      return res.status(400).json({ success: false, message: "This booking is not paid yet." });
+    }
+
+    let photos = [];
+    if (req.files?.length) {
+      const { uploadBuffers } = require("../utils/uploadFieldImages");
+      photos = await uploadBuffers(req.files, "ownerIssues");
+    }
+
+    const updated = await Service.findByIdAndUpdate(
+      service._id,
+      {
+        $push: {
+          "customerSecurity.issueReports": { message, photos, createdAt: new Date() },
+        },
+      },
+      { new: true }
+    );
+
+    return res.json({
+      success: true,
+      message: "We've received your report. Our team will review arrival logs and field updates.",
+      data: { issueCount: (updated.customerSecurity?.issueReports || []).length },
+    });
+  } catch (error) {
+    console.error("Owner issue report error:", error);
+    return res.status(500).json({ success: false, message: "Could not send your report." });
+  }
+};
+
 module.exports = {
   createService,
   verifyPayment,
@@ -1040,8 +1180,10 @@ module.exports = {
   getAllServices,
   getServiceById,
   getServiceStats,
+  reportOwnerIssue,
   // Legacy compatibility
   createHouseCleaningService,
   createCleaningService: createHouseCleaningService,
   verifyCleaningPayment: verifyPayment,
+  paystackWebhook,
 };

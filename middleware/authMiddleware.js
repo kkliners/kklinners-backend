@@ -2,12 +2,14 @@ const jwt = require("jsonwebtoken");
 const User = require("../model/user");
 const asyncHandler = require("express-async-handler");
 
+const httpError = (message, statusCode) => Object.assign(new Error(message), { statusCode });
+
 const authMiddleware = asyncHandler(async (req, res, next) => {
   try {
     // Extract the token from the Authorization header
     const authorizationHeader = req.headers.authorization;
     if (!authorizationHeader || !authorizationHeader.startsWith("Bearer ")) {
-      throw new Error("No Token Found In Header");
+      throw httpError("No Token Found In Header", 401);
     }
 
     const token = authorizationHeader.split(" ")[1];
@@ -21,7 +23,7 @@ const authMiddleware = asyncHandler(async (req, res, next) => {
     );
 
     if (!user) {
-      throw new Error("Invalid token - user not found");
+      throw httpError("Invalid token - user not found", 401);
     }
 
     // Attach the full user object to the request for later use
@@ -32,11 +34,11 @@ const authMiddleware = asyncHandler(async (req, res, next) => {
   } catch (error) {
     // Handle authentication errors
     if (error instanceof jwt.TokenExpiredError) {
-      throw new Error("Token expired, please log in again");
+      throw httpError("Token expired, please log in again", 401);
     } else if (error instanceof jwt.JsonWebTokenError) {
-      throw new Error("Invalid token");
+      throw httpError("Invalid token", 401);
     } else {
-      throw new Error(error.message || "Authentication failed");
+      throw httpError(error.message || "Authentication failed", error.statusCode || 401);
     }
   }
 });
@@ -47,18 +49,17 @@ const isAdmin = asyncHandler(async (req, res, next) => {
     const user = req.user;
 
     if (!user) {
-      throw new Error("User not authenticated");
+      throw httpError("User not authenticated", 401);
     }
 
     if (user.role !== "admin") {
-      throw new Error("User is not an admin");
+      throw httpError("User is not an admin", 403);
     }
 
     // If the user is an admin, proceed to the next middleware/route handler
     next();
   } catch (error) {
-    // Handle errors
-    throw new Error(error.message);
+    throw httpError(error.message, error.statusCode || 403);
   }
 });
 

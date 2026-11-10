@@ -92,6 +92,13 @@ const userSchema = new Schema(
       type: String,
       default: "",
     },
+    otpExpiresAt: {
+      type: Date,
+    },
+    otpAttempts: {
+      type: Number,
+      default: 0,
+    },
     expiresAt: {
       type: Date,
     },
@@ -117,6 +124,10 @@ const userSchema = new Schema(
     passwordResetExpires: {
       type: Date,
     },
+    passwordResetAttempts: {
+      type: Number,
+      default: 0,
+    },
     // Add metadata fields
     lastLogin: {
       type: Date,
@@ -137,6 +148,11 @@ const userSchema = new Schema(
         delete ret.refreshToken;
         delete ret.token;
         delete ret.otp;
+        delete ret.otpExpiresAt;
+        delete ret.otpAttempts;
+        delete ret.verificationTokenExpires; // holds the password reset code
+        delete ret.passwordResetExpires;
+        delete ret.passwordResetAttempts;
         return ret;
       },
     },
@@ -172,6 +188,7 @@ userSchema.methods.createVerificationToken = async function () {
   // Set the verification token and expiration time in the user document
   this.verificationTokenExpires = verificationToken;
   this.passwordResetExpires = Date.now() + 10 * 60 * 1000; // Expires in 10 minutes
+  this.passwordResetAttempts = 0;
   // Return the generated verification token
   return verificationToken;
 };

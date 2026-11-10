@@ -26,3 +26,5 @@ lerna-debug.log*
 next.js
 .next
 out
+# Local test credentials
+*.local.md

@@ -11,6 +11,10 @@ const serviceSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Sent by the app with each booking attempt. The same key always gives the same booking,
+    // so a double-click or a retry after a dropped connection can't create a second one.
+    idempotencyKey: { type: String },
+
     // User identification
     user_id: {
       type: String,
@@ -208,9 +212,16 @@ const serviceSchema = new mongoose.Schema(
         type: String,
         required: true,
       },
+      // How long the work is expected to take, in minutes. Customers' progress moves over this time.
+      expectedMinutes: { type: Number },
       location: {
         type: String,
         required: true,
+      },
+      // Neighbourhood from config/marketplace.js SERVICE_AREAS
+      area: {
+        type: String,
+        index: true,
       },
       paymentStatus: {
         type: String,
@@ -220,7 +231,20 @@ const serviceSchema = new mongoose.Schema(
       },
       progress: {
         type: String,
-        enum: ["pending", "confirmed", "in_progress", "completed", "cancelled"],
+        // pending   = awaiting payment
+        // confirmed = paid, waiting for a partner
+        // assigned  = offered to a partner, waiting for them to accept
+        // accepted  = partner accepted the job
+        enum: [
+          "pending",
+          "confirmed",
+          "assigned",
+          "accepted",
+          "in_progress",
+          "completion_requested",
+          "completed",
+          "cancelled",
+        ],
         default: "pending",
         index: true,
       },
@@ -236,6 +260,8 @@ const serviceSchema = new mongoose.Schema(
         amount_charged_kobo: Number,
         amount_charged_naira: Number,
         verified_at: Date,
+        flag: String, // "amount_mismatch" when Paystack took money that doesn't match the booking
+        flag_note: String,
         paystack_transaction_id: String,
         paid_amount_kobo: Number,
         paid_amount_naira: Number,
@@ -258,18 +284,93 @@ const serviceSchema = new mongoose.Schema(
       specialRequests: [String],
     },
 
-    // Service provider assignment
+    // Partner company assigned to this job
     serviceProvider: {
-      providerId: String,
+      providerId: String, // Partner _id
       providerName: String,
+      providerPhone: String,
       assignedAt: Date,
+      assignedBy: String, // admin user_id
+      acceptedAt: Date,
+      startedAt: Date,
+      fieldToken: { type: String, index: true, sparse: true },
+      assignedEmployees: [
+        {
+          employeeId: { type: String, required: true },
+          firstName: String,
+          lastName: String,
+          profilePhotoUrl: { type: String, default: "" },
+        },
+      ],
+      declined: [
+        {
+          providerId: String,
+          reason: String,
+          at: Date,
+        },
+      ],
       providerNotes: String,
+    },
+
+    // What the partner is owed once the job is completed
+    payout: {
+      status: {
+        type: String,
+        enum: ["not_due", "pending", "paid"],
+        default: "not_due",
+        index: true,
+      },
+      commissionRate: Number,
+      commissionAmount: Number, // naira kept by Kliner
+      partnerAmount: Number, // naira owed to the partner
+      paidAt: Date,
+      transferReference: String,
+      paidBy: String, // admin user_id
+    },
+
+    arrivalLog: {
+      arrivedAt: Date,
+      checkIns: [
+        {
+          employeeId: String,
+          name: String,
+          checkedInAt: { type: Date, default: Date.now },
+        },
+      ],
+    },
+
+    customerSecurity: {
+      belongingsAcknowledged: { type: Boolean, default: false },
+      limitedAccessAcknowledged: { type: Boolean, default: false },
+      accessNotes: { type: String, default: "" },
+      visitorCode: { type: String, default: "" },
+      issueReports: [
+        {
+          message: String,
+          photos: [String],
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
     },
 
     // Service completion details
     completion: {
       completedAt: Date,
       completionNotes: String,
+      requestedAt: Date,
+      requestNotes: String,
+      fieldReports: [
+        {
+          message: { type: String, default: "" },
+          photos: [String],
+          reportKind: {
+            type: String,
+            enum: ["update", "before", "after"],
+            default: "update",
+          },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
       customerRating: {
         type: Number,
         min: 1,
@@ -287,6 +388,10 @@ const serviceSchema = new mongoose.Schema(
 
 // Indexes for better query performance
 serviceSchema.index({ user_id: 1, createdAt: -1 });
+serviceSchema.index(
+  { user_id: 1, idempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } }
+);
 serviceSchema.index({ serviceType: 1, "booking.progress": 1 });
 serviceSchema.index({ "booking.bookingDate": 1, "booking.progress": 1 });
 serviceSchema.index({ "booking.payment.reference": 1 });

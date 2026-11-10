@@ -7,6 +7,9 @@ const userRoute = require("./route/user")
 const cors = require("cors");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 const houseRoutes = require("./route/house");
+const partnerRoutes = require("./route/partner");
+const promotionRoutes = require("./route/promotion");
+const employeeRoutes = require("./route/employee");
 const app = express();
 const port = process.env.PORT || 3002;
 
@@ -67,7 +70,15 @@ app.use(cors(corsOptions));
 
 
 // Body parsing middleware
-app.use(express.json({ limit: "10mb" }));
+// rawBody is kept so Paystack's webhook signature can be checked against the exact bytes it sent
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: false, limit: "10mb" }));
 
 // Logging middleware
@@ -88,6 +99,9 @@ app.use("/api/v1/auth", authRoute);
 app.use("/api/v1/user", userRoute);
 //app.use("/api/v1/service", serviceRoute)
 app.use("/api/v1/services", houseRoutes);
+app.use("/api/v1/partners", partnerRoutes);
+app.use("/api/v1/promotions", promotionRoutes);
+app.use("/api/v1/employees", employeeRoutes);
 // Root endpoint
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -115,6 +129,8 @@ process.on("SIGINT", () => {
 
 // Start the server
 app.listen(port, "0.0.0.0", () => {
+  // Re-checks recent unpaid bookings with Paystack, for customers who paid then lost signal
+  if (process.env.DISABLE_PAYMENT_SWEEPER !== "true") require("./utils/payments").startPaymentSweeper();
   console.log(`🚀 Server is running on port ${port}`);
   console.log(`📍 Health check: http://localhost:${port}/health`);
   console.log(`🌐 API Base URL: http://localhost:${port}/api/v1`);
